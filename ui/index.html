@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>JTokens</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --surface-0: #111110;
+  --surface-1: #1a1a19;
+  --surface-2: #232321;
+  --border: #33322f;
+  --grid: #2b2a28;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e86;
+  --accent: #3987e5;
+  --focus: #86b6ef;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --other: #6f6e69;
+  --t-input: #3987e5; --t-output: #d95926; --t-read: #199e70; --t-write: #c98500;
+  --radius: 8px;
+  --gap: 16px;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", Consolas, monospace;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface-0: #f3f3f1;
+  --surface-1: #fcfcfb;
+  --surface-2: #efefec;
+  --border: #dddcd7;
+  --grid: #e8e7e3;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #77766f;
+  --accent: #2a78d6;
+  --focus: #1c5cab;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --other: #a3a29c;
+  --t-input: #2a78d6; --t-output: #eb6834; --t-read: #1baf7a; --t-write: #eda100;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--surface-0); color: var(--text-primary); font: 13px/1.45 var(--font); }
+button, select, input { font: inherit; color: inherit; }
+.app { padding: 16px 20px 32px; max-width: 1600px; margin: 0 auto; }
+header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+header h1 { font-size: 16px; font-weight: 650; margin: 0 8px 0 0; letter-spacing: .2px; }
+.seg { display: inline-flex; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
+.seg button { background: none; border: 0; padding: 5px 11px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); }
+.seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--text-primary); font-weight: 600; }
+.seg button:hover { color: var(--text-primary); }
+.btn { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 12px; cursor: pointer; }
+.btn:hover { background: var(--surface-2); }
+.btn:disabled { opacity: .6; cursor: default; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--text-secondary); cursor: pointer; }
+.spacer { flex: 1; }
+.scaninfo { color: var(--text-muted); font-size: 12px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; min-height: 28px; align-items: center; margin-bottom: 12px; color: var(--text-muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 6px 3px 10px; color: var(--text-primary); }
+.chip button { border: 0; background: none; cursor: pointer; color: var(--text-muted); padding: 0 4px; font-size: 14px; line-height: 1; }
+.chip button:hover { color: var(--text-primary); }
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--gap); margin-bottom: var(--gap); }
+.kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.kpi .l { color: var(--text-secondary); font-size: 12px; }
+.kpi .v { font-size: 24px; font-weight: 650; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kpi .s { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+.grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--gap); margin-bottom: var(--gap); }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; min-width: 0; }
+.card h2 { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.card .sub { color: var(--text-muted); font-size: 12px; margin-bottom: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 8px; color: var(--text-secondary); font-size: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+svg { display: block; width: 100%; overflow: visible; }
+svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
+.hit { fill: transparent; cursor: pointer; }
+.hit:hover + g rect, .bar:hover { opacity: .85; }
+.selected-band { fill: var(--text-primary); opacity: .07; }
+.hbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.hbar:hover { background: var(--surface-2); }
+.hbar[aria-selected="true"] { background: var(--surface-2); outline: 1px solid var(--border); }
+.hbar .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.hbar .n i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.hbar .val { font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; }
+.hbar .track { grid-column: 1 / -1; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.hbar .track b { display: block; height: 100%; border-radius: 3px; }
+.hbar .meta { grid-column: 1 / -1; color: var(--text-muted); font-size: 11px; }
+.mix { display: flex; height: 14px; border-radius: 4px; overflow: hidden; gap: 2px; margin: 8px 0 10px; }
+.mix b { display: block; height: 100%; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface-1); }
+td.num, th.num { text-align: right; }
+td.wrap { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: var(--surface-2); }
+tbody tr[aria-selected="true"] td { background: var(--surface-2); }
+.tablewrap { max-height: 420px; overflow: auto; }
+.muted { color: var(--text-muted); }
+.tabs { display: flex; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid var(--border); }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--text-secondary); }
+.tabs button[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 600; }
+#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: none; max-width: 340px; }
+#tip .h { font-weight: 600; margin-bottom: 4px; }
+#tip .r { display: flex; justify-content: space-between; gap: 16px; }
+#tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+#tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.note { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+a { color: var(--accent); }
+.empty { color: var(--text-muted); padding: 40px 0; text-align: center; }
+.problem { color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface-1); margin-bottom: 12px; }
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, 1fr); } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>JTokens</h1>
+    <div class="seg" id="srcSeg" role="group" aria-label="Source">
+      <button data-v="all" aria-pressed="true">All</button>
+      <button data-v="0">Claude Code</button>
+      <button data-v="1">Codex</button>
+    </div>
+    <div class="seg" id="rangeSeg" role="group" aria-label="Date range">
+      <button data-v="1">Today</button>
+      <button data-v="7">7 days</button>
+      <button data-v="30" aria-pressed="true">30 days</button>
+      <button data-v="90">90 days</button>
+      <button data-v="0">All time</button>
+    </div>
+    <div class="seg" id="metricSeg" role="group" aria-label="Measure">
+      <button data-v="cost" aria-pressed="true">API cost</button>
+      <button data-v="tokens">Tokens</button>
+    </div>
+    <div class="spacer"></div>
+    <span class="scaninfo" id="scaninfo">Scanning…</span>
+    <label class="chk"><input type="checkbox" id="live"> Live</label>
+    <button class="btn" id="refresh">Refresh</button>
+    <button class="btn" id="theme" title="Switch light or dark">Light</button>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
+    <button role="tab" aria-selected="false" data-tab="prices">API prices</button>
+  </div>
+
+  <section id="tab-overview">
+    <div class="filters" id="filters"></div>
+    <div id="problems"></div>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid">
+      <div class="card">
+        <h2 id="dailyTitle">Daily API cost by model</h2>
+        <div class="sub">Click a day to filter everything to it. Click again to clear.</div>
+        <div class="legend" id="dailyLegend"></div>
+        <div id="daily"></div>
+      </div>
+      <div class="card">
+        <h2>By model</h2>
+        <div class="sub">Click a model to filter.</div>
+        <div id="models"></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2 id="hourTitle">By hour of day</h2>
+        <div class="sub" id="hourSub">Local time, summed over the selected range.</div>
+        <div id="hourly"></div>
+      </div>
+      <div class="card">
+        <h2>Token mix</h2>
+        <div class="sub">Where the tokens went.</div>
+        <div id="mix"></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Sessions</h2>
+        <div class="sub">Click a session to filter. Click a column to sort.</div>
+        <div class="tablewrap" id="sessions"></div>
+      </div>
+      <div class="card">
+        <h2>Projects</h2>
+        <div class="sub">Working folder of each session.</div>
+        <div class="tablewrap" id="projects"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-prices" hidden>
+    <div class="card">
+      <h2>API list prices used for cost</h2>
+      <div class="sub" id="priceSub"></div>
+      <div class="tablewrap" style="max-height:none" id="priceTable"></div>
+      <div class="note">
+        Cost is what the same tokens would cost on the pay-as-you-go API at list price. If you use a Claude or ChatGPT subscription you are not billed this amount.
+        Claude: cache writes are 1.25x input (5 minute) or 2x input (1 hour); Claude Haiku 5.5 uses the higher row when a prompt is over 100,000 tokens; fast mode uses the fast price with the same cache multipliers.
+        OpenAI: cached input uses the cached rate; prompts over 272,000 tokens use the long-context row. Codex priority or fast tiers are not detected and are priced at Standard.
+        Models with no public price (for example codex-auto-review) are counted in tokens but not in cost.
+      </div>
+    </div>
+  </section>
+</div>
+<div id="tip" role="tooltip"></div>
+<!--DATA-->
+<script>
+window.addEventListener("error", (e) => { if (window.ipc) window.ipc.postMessage("log:error " + e.message + " at " + e.lineno); });
+</script>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
+const SRC_NAME = ["Claude Code", "Codex"];
+const state = { src: "all", range: 30, metric: "cost", day: null, model: null, proj: null, sess: null, sort: "cost", sortDir: -1, tab: "overview" };
+let D = null;            // data from the scanner
+let colorOf = [];        // model index -> css var (fixed per model, by all-time cost)
+let dayOfHour = new Map();
+let rendered = false;
+
+// ---------- formatting
+const fmtUsd = (v) => v >= 1000 ? "$" + Math.round(v).toLocaleString() : v >= 100 ? "$" + v.toFixed(0) : v >= 1 ? "$" + v.toFixed(2) : v > 0 ? "$" + v.toFixed(3) : "$0";
+const fmtTok = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : String(v);
+const fmtInt = (v) => v.toLocaleString();
+const fmtVal = (v) => state.metric === "cost" ? fmtUsd(v) : fmtTok(v);
+const pad = (n) => String(n).padStart(2, "0");
+const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
+const dtLabel = (ts) => ts ? new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const baseName = (p) => { const parts = p.split(/[\\/]/).filter(Boolean); return parts.length ? parts[parts.length - 1] : p; };
+const cssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function dayOf(hour) {
+  let k = dayOfHour.get(hour);
+  if (k === undefined) { k = dayKey(new Date(hour * 3600000)); dayOfHour.set(hour, k); }
+  return k;
+}
+function localHour(hour) { return new Date(hour * 3600000).getHours(); }
+
+// ---------- data intake
+window.tkData = function (data) {
+  D = data;
+  dayOfHour = new Map();
+  // fixed colors: top models by all-time cost (tokens as tie-break) get slots, rest are Other
+  const tot = new Map();
+  for (const r of D.rows) { const t = tot.get(r[0]) || [0, 0]; t[0] += r[7]; t[1] += r[3] + r[4] + r[5] + r[6]; tot.set(r[0], t); }
+  const order = [...tot.keys()].sort((a, b) => (tot.get(b)[0] - tot.get(a)[0]) || (tot.get(b)[1] - tot.get(a)[1]));
+  colorOf = new Array(D.models.length).fill("--other");
+  order.slice(0, 7).forEach((m, i) => colorOf[m] = SLOTS[i]);
+  const s = D.scan;
+  const took = s.ms < 1000 ? Math.round(s.ms) + " ms" : (s.ms / 1000).toFixed(2) + " s";
+  $("#scaninfo").textContent = `${(s.bytes / 1e9).toFixed(2)} GB scanned in ${took}`;
+  $("#scaninfo").title = `${fmtInt(s.files)} log files, ${fmtInt(s.events)} requests, ${fmtInt(s.parsed)} files read this scan${s.avx2 ? ", AVX2" : ""}`;
+  const lastCodex = D.rows.reduce((m, r) => D.models[r[0]].src === 1 ? Math.max(m, r[2]) : m, 0);
+  D.lastBySrc = [D.rows.reduce((m, r) => D.models[r[0]].src === 0 ? Math.max(m, r[2]) : m, 0), lastCodex];
+  $("#refresh").disabled = false;
+  render();
+  if (!rendered) {
+    rendered = true;
+    if (window.ipc) window.ipc.postMessage("rendered:" + JSON.stringify(selfCheck()));
+  }
+};
+
+function selfCheck() {
+  return {
+    rows: D.rows.length, models: D.models.length, sessions: D.sessions.length,
+    dailyBars: document.querySelectorAll("#daily .hit").length,
+    modelRows: document.querySelectorAll("#models .hbar").length,
+    sessionRows: document.querySelectorAll("#sessions tbody tr").length,
+    kpiCost: document.querySelector("#kpis .v") ? document.querySelector("#kpis .v").textContent : null,
+  };
+}
+
+// ---------- filtering
+function rangeStart() {
+  if (!state.range) return null;
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (state.range - 1));
+  return dayKey(d);
+}
+function passes(r, opts = {}) {
+  const m = D.models[r[0]];
+  if (state.src !== "all" && m.src !== +state.src) return false;
+  if (!opts.ignoreModel && state.model !== null && r[0] !== state.model) return false;
+  if (!opts.ignoreSess && state.sess !== null && r[1] !== state.sess) return false;
+  if (!opts.ignoreProj && state.proj !== null && D.sessions[r[1]][2] !== state.proj) return false;
+  const dk = dayOf(r[2]);
+  const rs = rangeStart();
+  if (rs && dk < rs) return false;
+  if (!opts.ignoreDay && state.day && dk !== state.day) return false;
+  return true;
+}
+const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
+
+// ---------- render
+function render() {
+  if (!D) return;
+  renderFilters();
+  renderKpis();
+  renderDaily();
+  renderModels();
+  renderHourly();
+  renderMix();
+  renderSessions();
+  renderProjects();
+  renderPrices();
+  $("#dailyTitle").textContent = state.metric === "cost" ? "Daily API cost by model" : "Daily tokens by model";
+}
+
+function renderFilters() {
+  const chips = [];
+  if (state.day) chips.push(["day", "Day: " + dayLabel(state.day)]);
+  if (state.model !== null) chips.push(["model", "Model: " + D.models[state.model].name]);
+  if (state.proj !== null) chips.push(["proj", "Project: " + baseName(D.projects[state.proj])]);
+  if (state.sess !== null) { const s = D.sessions[state.sess]; chips.push(["sess", "Session: " + (s[3] || s[1].slice(0, 8))]); }
+  $("#filters").innerHTML = chips.length
+    ? chips.map(([k, t]) => `<span class="chip">${esc(t)}<button data-clear="${k}" aria-label="Remove filter">×</button></span>`).join("") + (chips.length > 1 ? `<button class="btn" data-clear="all">Clear all</button>` : "")
+    : "No filters. Click any bar, model, session or project to filter.";
+}
+
+function renderKpis() {
+  let cost = 0, tok = 0, reqs = 0, unpricedTok = 0;
+  const sess = new Set(), days = new Set();
+  for (const r of D.rows) {
+    if (!passes(r)) continue;
+    const t = r[3] + r[4] + r[5] + r[6];
+    cost += r[7]; tok += t; reqs += r[8];
+    sess.add(r[1]); days.add(dayOf(r[2]));
+    if (!D.models[r[0]].priced) unpricedTok += t;
+  }
+  const perDay = days.size ? cost / days.size : 0;
+  const tiles = [
+    ["API cost", fmtUsd(cost), state.range ? `last ${state.range === 1 ? "day" : state.range + " days"}` : "all time"],
+    ["Tokens", fmtTok(tok), "input, output and cache"],
+    ["Requests", fmtInt(reqs), "model calls"],
+    ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`],
+    ["Per active day", fmtUsd(perDay), "API cost"],
+    ["Unpriced tokens", fmtTok(unpricedTok), unpricedTok ? "models with no public price" : "every model has a price"],
+  ];
+  $("#kpis").innerHTML = tiles.map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+  // say why a source is empty instead of showing a blank chart
+  const notes = [];
+  for (const src of state.src === "all" ? [0, 1] : [+state.src]) {
+    const last = D.lastBySrc[src];
+    const rs = rangeStart();
+    if (!last) notes.push(`No ${SRC_NAME[src]} usage found on this computer.`);
+    else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
+  }
+  $("#problems").innerHTML = notes.map((n) => `<div class="problem">${esc(n)}</div>`).join("");
+}
+
+function topModelsFor(rows) {
+  const tot = new Map();
+  for (const r of rows) tot.set(r[0], (tot.get(r[0]) || 0) + val(r));
+  return [...tot.entries()].filter((e) => e[1] > 0).sort((a, b) => b[1] - a[1]).map((e) => e[0]);
+}
+
+function legendHtml(models) {
+  const seen = new Set(); const items = [];
+  for (const m of models) {
+    const c = colorOf[m];
+    if (c === "--other") { if (!seen.has("other")) { seen.add("other"); items.push(`<span><i style="background:var(--other)"></i>Other models</span>`); } continue; }
+    items.push(`<span data-model="${m}"><i style="background:var(${c})"></i>${esc(D.models[m].name)}</span>`);
+  }
+  return items.join("");
+}
+
+function renderDaily() {
+  // collect days in range
+  const rs = rangeStart();
+  let start;
+  const keys = [];
+  if (rs) { const [y, m, d] = rs.split("-").map(Number); start = new Date(y, m - 1, d); }
+  else {
+    let min = null;
+    for (const r of D.rows) if (passes(r, { ignoreDay: true })) { const k = dayOf(r[2]); if (!min || k < min) min = k; }
+    if (!min) { $("#daily").innerHTML = `<div class="empty">No usage in this range.</div>`; $("#dailyLegend").innerHTML = ""; return; }
+    const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) keys.push(dayKey(d));
+  const idx = new Map(keys.map((k, i) => [k, i]));
+  const per = keys.map(() => new Map());
+  const used = [];
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreDay: true })) continue;
+    const i = idx.get(dayOf(r[2])); if (i === undefined) continue;
+    const key = colorOf[r[0]] === "--other" ? -1 : r[0];
+    per[i].set(key, (per[i].get(key) || 0) + val(r));
+    used.push(r);
+  }
+  const models = topModelsFor(used);
+  $("#dailyLegend").innerHTML = legendHtml(models);
+  const stackOrder = models.filter((m) => colorOf[m] !== "--other"); stackOrder.push(-1);
+  const totals = per.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
+  const max = Math.max(...totals, 0);
+  if (max <= 0) { $("#daily").innerHTML = `<div class="empty">No usage in this range.</div>`; return; }
+  const W = 820, H = 260, L = 52, B = 22, T = 8;
+  const plotW = W - L - 8, plotH = H - B - T;
+  const n = keys.length, slot = plotW / n, bw = Math.max(2, Math.min(28, slot * 0.72));
+  const ticks = niceTicks(max, 4);
+  const y = (v) => T + plotH - (v / ticks[ticks.length - 1]) * plotH;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily usage chart">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - 8}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${fmtVal(t)}</text>`;
+  const labelEvery = Math.ceil(n / 12);
+  keys.forEach((k, i) => {
+    const x = L + i * slot + (slot - bw) / 2;
+    if (state.day === k) s += `<rect class="selected-band" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
+    let acc = 0; const segs = [];
+    for (const m of stackOrder) {
+      const v = per[i].get(m) || 0; if (v <= 0) continue;
+      segs.push([m, acc, v]); acc += v;
+    }
+    segs.forEach(([m, a, v], j) => {
+      const y0 = y(a), y1 = y(a + v);
+      const h = Math.max(0, y0 - y1 - (j > 0 ? 2 : 0));
+      const top = j === segs.length - 1;
+      const color = m === -1 ? "var(--other)" : `var(${colorOf[m]})`;
+      const dim = state.day && state.day !== k ? ' opacity="0.35"' : "";
+      if (h <= 0) return;
+      if (top && h > 4) s += `<path d="${roundTop(x, y1, bw, h, 3)}" fill="${color}"${dim}/>`;
+      else s += `<rect x="${x}" y="${y1}" width="${bw}" height="${h}" fill="${color}"${dim}/>`;
+    });
+    if (i % labelEvery === 0 || n <= 12) s += `<text x="${L + i * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${dayLabel(k)}</text>`;
+    s += `<rect class="hit" data-day="${k}" data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
+  });
+  s += `</svg>`;
+  $("#daily").innerHTML = s;
+  const el = $("#daily svg");
+  el._tip = (i) => {
+    const m = per[i];
+    const rows = stackOrder.filter((k) => (m.get(k) || 0) > 0).map((k) => [k === -1 ? "Other models" : D.models[k].name, k === -1 ? "var(--other)" : `var(${colorOf[k]})`, m.get(k)]);
+    return `<div class="h">${dayLabel(keys[i])}: ${fmtVal(totals[i])}</div>` + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("");
+  };
+}
+
+function roundTop(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+function niceTicks(max, count) {
+  const raw = max / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw;
+  const out = []; for (let v = 0; v <= max + step * 0.999; v += step) out.push(v);
+  if (out.length < 2) out.push(step);
+  return out;
+}
+
+function renderModels() {
+  const agg = new Map();
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreModel: true })) continue;
+    const a = agg.get(r[0]) || { cost: 0, tok: 0, reqs: 0 };
+    a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.reqs += r[8];
+    agg.set(r[0], a);
+  }
+  const list = [...agg.entries()].sort((a, b) => (state.metric === "cost" ? (b[1].cost - a[1].cost) || (b[1].tok - a[1].tok) : b[1].tok - a[1].tok));
+  if (!list.length) { $("#models").innerHTML = `<div class="empty">No usage.</div>`; return; }
+  const max = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
+  $("#models").innerHTML = list.map(([m, a]) => {
+    const md = D.models[m]; const v = state.metric === "cost" ? a.cost : a.tok;
+    const c = `var(${colorOf[m]})`;
+    const right = state.metric === "cost" ? (md.priced ? fmtUsd(a.cost) : "no public price") : fmtTok(a.tok);
+    return `<div class="hbar" data-model="${m}" aria-selected="${state.model === m}" tabindex="0">
+      <div class="n"><i style="background:${c}"></i>${esc(md.name)}<span class="muted">${SRC_NAME[md.src]}</span></div>
+      <div class="val">${right}</div>
+      <div class="track"><b style="width:${(v / max * 100).toFixed(2)}%;background:${c}"></b></div>
+      <div class="meta">${fmtTok(a.tok)} tokens, ${fmtInt(a.reqs)} requests${md.name !== md.id ? ", id " + esc(md.id) : ""}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderHourly() {
+  const vals = new Array(24).fill(0);
+  for (const r of D.rows) { if (passes(r)) vals[localHour(r[2])] += val(r); }
+  $("#hourTitle").textContent = state.day ? "By hour, " + dayLabel(state.day) : "By hour of day";
+  $("#hourSub").textContent = state.day ? "Local time on the selected day." : "Local time, summed over the selected range.";
+  const max = Math.max(...vals);
+  if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">No usage.</div>`; return; }
+  const W = 820, H = 180, L = 52, B = 22, T = 8, plotW = W - L - 8, plotH = H - B - T;
+  const ticks = niceTicks(max, 3), top = ticks[ticks.length - 1];
+  const slot = plotW / 24, bw = slot * 0.7;
+  const y = (v) => T + plotH - v / top * plotH;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Usage by hour">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - 8}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${fmtVal(t)}</text>`;
+  vals.forEach((v, h) => {
+    const x = L + h * slot + (slot - bw) / 2, hh = y(0) - y(v);
+    if (hh > 0) s += hh > 4 ? `<path class="bar" d="${roundTop(x, y(v), bw, hh, 3)}" fill="var(--accent)"/>` : `<rect class="bar" x="${x}" y="${y(v)}" width="${bw}" height="${hh}" fill="var(--accent)"/>`;
+    if (h % 3 === 0) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${h === 0 ? "12a" : h < 12 ? h + "a" : h === 12 ? "12p" : (h - 12) + "p"}</text>`;
+    s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
+  });
+  s += `</svg>`;
+  $("#hourly").innerHTML = s;
+  $("#hourly svg")._tip = (h) => `<div class="h">${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${fmtVal(vals[h])}</span></div>`;
+}
+
+function renderMix() {
+  const t = [0, 0, 0, 0];
+  for (const r of D.rows) if (passes(r)) { t[0] += r[3]; t[1] += r[4]; t[2] += r[5]; t[3] += r[6]; }
+  const sum = t.reduce((a, b) => a + b, 0);
+  if (!sum) { $("#mix").innerHTML = `<div class="empty">No usage.</div>`; return; }
+  const names = ["Input (not cached)", "Output (incl. reasoning)", "Cache read", "Cache write"];
+  const cols = ["--t-input", "--t-output", "--t-read", "--t-write"];
+  $("#mix").innerHTML = `<div class="mix" role="img" aria-label="Token mix">${t.map((v, i) => v ? `<b style="width:${v / sum * 100}%;background:var(${cols[i]})" title="${names[i]}"></b>` : "").join("")}</div>
+    <table><thead><tr><th>Type</th><th class="num">Tokens</th><th class="num">Share</th></tr></thead><tbody>
+    ${t.map((v, i) => `<tr style="cursor:default"><td><span style="display:inline-flex;gap:6px;align-items:center"><i style="width:10px;height:10px;border-radius:3px;background:var(${cols[i]})"></i>${names[i]}</span></td><td class="num">${fmtInt(v)}</td><td class="num">${(v / sum * 100).toFixed(1)}%</td></tr>`).join("")}
+    </tbody></table>
+    <div class="note">Cache reads are billed at a small fraction of input, which is why huge token counts can cost little.</div>`;
+}
+
+function renderSessions() {
+  const agg = new Map();
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreSess: true })) continue;
+    let a = agg.get(r[1]);
+    if (!a) { a = { cost: 0, tok: 0, reqs: 0, models: new Map(), first: Infinity, last: 0 }; agg.set(r[1], a); }
+    a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.reqs += r[8];
+    a.models.set(r[0], (a.models.get(r[0]) || 0) + r[7] + 1e-12 * (r[3] + r[4]));
+    a.first = Math.min(a.first, r[2]); a.last = Math.max(a.last, r[2]);
+  }
+  const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => a[1].first, title: (a) => (D.sessions[a[0]][3] || "").toLowerCase() }[state.sort] || ((a) => a[1].cost);
+  const list = [...agg.entries()].sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * state.sortDir; }).slice(0, 300);
+  if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; return; }
+  const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
+  $("#sessions").innerHTML = `<table><thead><tr>
+      <th data-sort="title">Session${arrow("title")}</th><th>Tool</th><th>Main model</th><th data-sort="start">Started${arrow("start")}</th>
+      <th class="num" data-sort="reqs">Requests${arrow("reqs")}</th><th class="num" data-sort="tokens">Tokens${arrow("tokens")}</th><th class="num" data-sort="cost">API cost${arrow("cost")}</th></tr></thead><tbody>
+    ${list.map(([si, a]) => {
+      const s = D.sessions[si];
+      const main = [...a.models.entries()].sort((x, y) => y[1] - x[1])[0][0];
+      const title = s[3] || baseName(D.projects[s[2]]) + " · " + s[1].slice(0, 8);
+      return `<tr data-sess="${si}" aria-selected="${state.sess === si}" title="${esc(D.projects[s[2]])}\n${esc(s[1])}">
+        <td class="wrap">${esc(title)}</td><td class="muted">${SRC_NAME[s[0]]}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(a.first * 3600)}</td>
+        <td class="num">${fmtInt(a.reqs)}</td><td class="num">${fmtTok(a.tok)}</td><td class="num">${fmtUsd(a.cost)}</td></tr>`;
+    }).join("")}
+  </tbody></table>${agg.size > 300 ? `<div class="note">Showing the top 300 of ${fmtInt(agg.size)} sessions.</div>` : ""}`;
+}
+
+function renderProjects() {
+  const agg = new Map();
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreProj: true, ignoreSess: true })) continue;
+    const p = D.sessions[r[1]][2];
+    let a = agg.get(p); if (!a) { a = { cost: 0, tok: 0, sess: new Set() }; agg.set(p, a); }
+    a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.sess.add(r[1]);
+  }
+  const list = [...agg.entries()].sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok).slice(0, 200);
+  if (!list.length) { $("#projects").innerHTML = `<div class="empty">No projects.</div>`; return; }
+  $("#projects").innerHTML = `<table><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">Tokens</th><th class="num">API cost</th></tr></thead><tbody>
+    ${list.map(([p, a]) => `<tr data-proj="${p}" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num">${fmtTok(a.tok)}</td><td class="num">${fmtUsd(a.cost)}</td></tr>`).join("")}
+  </tbody></table>`;
+}
+
+function renderPrices() {
+  $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`).join(" and ") + ".";
+  const usedIds = new Set(D.models.map((m) => m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, "")));
+  const money = (v) => v ? "$" + (+v.toFixed(4)).toString() : "";
+  $("#priceTable").innerHTML = `<table><thead><tr><th>Model</th><th>ID</th><th class="num">Input</th><th class="num">Cache write 5m</th><th class="num">Cache write 1h</th><th class="num">Cache read</th><th class="num">Output</th><th>Long prompt</th><th>Fast mode</th><th>In your logs</th></tr></thead><tbody>
+    ${D.prices.map((p) => `<tr style="cursor:default"><td>${esc(p.name)}</td><td class="muted" style="font-family:var(--mono)">${esc(p.id)}</td>
+      <td class="num">${money(p.in)}</td><td class="num">${money(p.w5)}</td><td class="num">${money(p.w1h)}</td><td class="num">${money(p.cr)}</td><td class="num">${money(p.out)}</td>
+      <td class="muted">${p.longOver ? `over ${fmtTok(p.longOver)}: ${money(p.lin)} in, ${money(p.lcr)} cached, ${money(p.lout)} out` : ""}</td>
+      <td class="muted">${p.fin ? `${money(p.fin)} in, ${money(p.fout)} out` : ""}</td>
+      <td>${usedIds.has(p.id) ? "Yes" : ""}</td></tr>`).join("")}
+  </tbody></table>
+  ${D.models.filter((m) => !m.priced).length ? `<div class="note">In your logs with no public API price: ${D.models.filter((m) => !m.priced).map((m) => esc(m.id)).join(", ")}.</div>` : ""}`;
+}
+
+// ---------- interaction
+const tip = $("#tip");
+document.addEventListener("mousemove", (e) => {
+  const hit = e.target.closest && e.target.closest(".hit");
+  if (!hit) { tip.style.display = "none"; return; }
+  const svg = hit.ownerSVGElement;
+  const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
+  if (!svg || !svg._tip) return;
+  tip.innerHTML = svg._tip(k);
+  tip.style.display = "block";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + 14, y = e.clientY + 14;
+  if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+  if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+});
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  const seg = t.closest(".seg button");
+  if (seg) {
+    const g = seg.parentElement.id;
+    seg.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === seg));
+    if (g === "srcSeg") { state.src = seg.dataset.v; state.model = null; state.sess = null; state.proj = null; }
+    if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; }
+    if (g === "metricSeg") state.metric = seg.dataset.v;
+    return render();
+  }
+  const tab = t.closest(".tabs button");
+  if (tab) {
+    document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b === tab));
+    $("#tab-overview").hidden = tab.dataset.tab !== "overview";
+    $("#tab-prices").hidden = tab.dataset.tab !== "prices";
+    return;
+  }
+  const open = t.closest("[data-open]");
+  if (open) { e.preventDefault(); if (window.ipc) window.ipc.postMessage("open:" + open.dataset.open); else window.open(open.dataset.open); return; }
+  const clear = t.closest("[data-clear]");
+  if (clear) { const k = clear.dataset.clear; if (k === "all") Object.assign(state, { day: null, model: null, proj: null, sess: null }); else state[k] = null; return render(); }
+  const day = t.closest("[data-day]");
+  if (day) { state.day = state.day === day.dataset.day ? null : day.dataset.day; return render(); }
+  const model = t.closest("[data-model]");
+  if (model) { const m = +model.dataset.model; state.model = state.model === m ? null : m; return render(); }
+  const sort = t.closest("[data-sort]");
+  if (sort) { const k = sort.dataset.sort; if (state.sort === k) state.sortDir *= -1; else { state.sort = k; state.sortDir = k === "title" ? 1 : -1; } return renderSessions(); }
+  const sess = t.closest("[data-sess]");
+  if (sess) { const s = +sess.dataset.sess; state.sess = state.sess === s ? null : s; return render(); }
+  const proj = t.closest("[data-proj]");
+  if (proj) { const p = +proj.dataset.proj; state.proj = state.proj === p ? null : p; state.sess = null; return render(); }
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches(".hbar")) { e.preventDefault(); e.target.click(); }
+  if (e.key === "Escape") { Object.assign(state, { day: null, model: null, proj: null, sess: null }); render(); }
+});
+
+function requestScan() {
+  if (!window.ipc) return;
+  $("#refresh").disabled = true;
+  window.ipc.postMessage("scan");
+}
+$("#refresh").addEventListener("click", requestScan);
+let liveTimer = null;
+$("#live").addEventListener("change", (e) => {
+  clearInterval(liveTimer);
+  if (e.target.checked) { requestScan(); liveTimer = setInterval(requestScan, 10000); }
+});
+// theme is saved by the app (settings file), not in the page
+function applyTheme(t) { document.documentElement.dataset.theme = t; $("#theme").textContent = t === "light" ? "Dark" : "Light"; }
+applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+$("#theme").addEventListener("click", () => { const t = document.documentElement.dataset.theme === "light" ? "dark" : "light"; applyTheme(t); if (window.ipc) window.ipc.postMessage("theme:" + t); });
+
+if (window.__TK_STATIC) { $("#refresh").disabled = true; $("#live").disabled = true; window.tkData(window.__TK_STATIC); }
+else requestScan();
+</script>
+</body>
+</html>

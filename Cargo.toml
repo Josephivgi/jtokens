@@ -1,0 +1,19 @@
+[package]
+name = "jtokens"
+version = "0.1.0"
+edition = "2021"
+description = "Fast Claude Code and Codex token and API cost viewer"
+
+[dependencies]
+wry = "0.57"
+tao = "0.37"
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

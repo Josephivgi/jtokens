@@ -26,3 +26,9 @@ Needs the Rust MSVC toolchain and Visual Studio Build Tools (for `ml64.exe`).
     jtokens --json data.json                write the raw data the UI uses
 
 `python -I tools/verify.py data.json` checks the assembly scanner against a full JSON parse of every log line.
+
+## Inside JWorkspace
+
+`jworkspace.json` makes JTokens a JWorkspace app (add this folder on JWorkspace's Apps page). The page is the same `ui/index.html`; `workspace/preload.cjs` gives it `window.ipc`, and `workspace/workspace.cjs` runs `jtokens --serve` hidden: each `scan` line on stdin answers one line of JSON, with the per-file cache kept warm between scans. JWorkspace's theme is used. Build first (`cargo build --release`).
+
+    jtokens --serve                         scan on each `scan` line from stdin, answer JSON lines (for JWorkspace)

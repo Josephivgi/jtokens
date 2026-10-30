@@ -1,0 +1,10 @@
+{
+  "id": "jtokens",
+  "name": "JTokens",
+  "description": "Claude Code and Codex token usage and API cost, from your local logs.",
+  "version": "0.1.0",
+  "icon": "workspace/icon.svg",
+  "page": "ui/index.html",
+  "preload": "workspace/preload.cjs",
+  "main": "workspace/workspace.cjs"
+}

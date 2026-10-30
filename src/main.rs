@@ -651,11 +651,38 @@ fn attach_console() {
     }
 }
 
+// --serve: a long-lived scanner for hosts like JWorkspace. Each "scan" line on
+// stdin answers one line of the same JSON the window gets. The per-file cache
+// stays warm between scans, so refreshes after the first are fast. Ends when
+// stdin closes.
+fn serve() {
+    use std::io::{BufRead, Write};
+    let mut sc = Scanner::default();
+    let stdin = std::io::stdin();
+    let mut out = std::io::stdout();
+    for line in stdin.lock().lines() {
+        let Ok(line) = line else { break };
+        if line.trim() != "scan" {
+            continue;
+        }
+        let (files, st) = sc.scan();
+        let t = build_json(&files, &st);
+        if writeln!(out, "{}", t.json).and_then(|_| out.flush()).is_err() {
+            break;
+        }
+    }
+}
+
 fn main() {
     unsafe { tk_init() };
     let args: Vec<String> = std::env::args().collect();
     let flag = |f: &str| args.iter().any(|a| a == f);
     let value = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
+
+    if flag("--serve") {
+        serve();
+        return;
+    }
 
     if flag("--smoke") || value("--export").is_some() || value("--json").is_some() {
         attach_console();

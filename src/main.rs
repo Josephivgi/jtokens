@@ -795,6 +795,7 @@ enum UserEvent {
     Data(String),
     Rendered(String),
     Update(String),
+    Fullscreen(bool),
     Exit,
 }
 
@@ -882,6 +883,8 @@ fn run_gui(smoke: bool, report: Option<String>) {
                 } else {
                     let _ = ipc_proxy.send_event(UserEvent::Update(updater.state().json()));
                 }
+            } else if let Some(on) = body.strip_prefix("fullscreen:") {
+                let _ = ipc_proxy.send_event(UserEvent::Fullscreen(on == "on"));
             } else if let Some(url) = body.strip_prefix("open:") {
                 if url.starts_with("https://") {
                     open_url(url);
@@ -918,6 +921,10 @@ Details: {e}"
                 let _ = webview.evaluate_script(&format!("window.tkUpdate && window.tkUpdate({json});"));
             }
             Event::UserEvent(UserEvent::Exit) => *cf = ControlFlow::Exit,
+            Event::UserEvent(UserEvent::Fullscreen(on)) => {
+                window.set_fullscreen(if on { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
+                let _ = webview.evaluate_script(&format!("window.tkFullscreen && window.tkFullscreen({on});"));
+            }
             Event::UserEvent(UserEvent::Rendered(info)) => {
                 if smoke {
                     if let Some(p) = &report {

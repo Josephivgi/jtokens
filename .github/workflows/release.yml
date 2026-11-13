@@ -1,0 +1,176 @@
+name: Release
+
+# Every push to main and every pull request runs the gate and a test build.
+# A GitHub release is published only for a v* tag (or a manual run on main),
+# and only after the gate passes. Release notes come from the tag's section
+# in CHANGELOG.md; no section means no release.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e"
+  CARGO_TERM_COLOR: never
+
+jobs:
+  gate:
+    name: Gate and build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Secret scan (gitleaks, full history and working tree)
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "gitleaks.zip"
+          $url = "https://github.com/gitleaks/gitleaks/releases/download/v$env:GITLEAKS_VERSION/gitleaks_$($env:GITLEAKS_VERSION)_windows_x64.zip"
+          $ok = $false
+          for ($i = 1; $i -le 6 -and -not $ok; $i++) {
+            try {
+              Invoke-WebRequest $url -OutFile $zip -TimeoutSec 180
+              $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+              if ($hash -ne $env:GITLEAKS_SHA256) { throw "gitleaks checksum mismatch: $hash" }
+              $ok = $true
+            } catch {
+              Write-Warning "gitleaks download try $i failed: $($_.Exception.Message)"
+              if ($i -lt 6) { Start-Sleep -Seconds ([Math]::Min(60, 15 * $i)) }
+            }
+          }
+          if (-not $ok) { throw "gitleaks could not be downloaded" }
+          Expand-Archive $zip -DestinationPath (Join-Path $env:RUNNER_TEMP "gitleaks")
+          $gl = Join-Path $env:RUNNER_TEMP "gitleaks\gitleaks.exe"
+          & $gl git --redact --no-banner -v .
+          if ($LASTEXITCODE -ne 0) { throw "gitleaks found secrets in git history" }
+          & $gl dir --redact --no-banner -v .
+          if ($LASTEXITCODE -ne 0) { throw "gitleaks found secrets in the working tree" }
+
+      - name: Rust toolchain
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "Cargo.toml version $v does not match tag $GITHUB_REF_NAME"; exit 1; }
+          tr -d '\r' < CHANGELOG.md | grep -q "^## $GITHUB_REF_NAME\$" || { echo "CHANGELOG.md has no section for $GITHUB_REF_NAME"; exit 1; }
+
+      - name: Build (release)
+        run: cargo build --release --locked
+
+      # No logs on the runner, so this checks the empty state: the scanner and
+      # the real WebView2 window (hidden) both have to come up and report.
+      - name: Smoke test (scanner and hidden window)
+        shell: pwsh
+        run: |
+          $exe = "target\release\jtokens.exe"
+          $v = & $exe --version | Out-String
+          if ($v -notmatch "jtokens \d") { throw "--version printed: $v" }
+          & $exe --smoke --report smoke.json | Out-Null
+          $s = Get-Content smoke.json -Raw | ConvertFrom-Json
+          if ($null -eq $s.coldScanMs) { throw "scanner smoke failed" }
+          $p = Start-Process $exe -ArgumentList "--smoke-gui","--report","gui.json" -PassThru -Wait
+          $g = Get-Content gui.json -Raw | ConvertFrom-Json
+          if ($g.error) { throw "window smoke failed: $($g.error)" }
+          if ($null -eq $g.kpiCost) { throw "window did not render" }
+          "scanner: $(Get-Content smoke.json -Raw)"
+          "window: $(Get-Content gui.json -Raw)"
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\release\jtokens.exe dist\JTokens.exe
+          Copy-Item LICENSE dist\LICENSE.txt
+          Compress-Archive -Path dist\JTokens.exe, dist\LICENSE.txt -DestinationPath dist\JTokens-windows-x64.zip
+          Push-Location dist
+          Get-FileHash JTokens.exe, JTokens-windows-x64.zip -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Encoding ascii SHA256SUMS.txt
+          Pop-Location
+          Get-Content dist\SHA256SUMS.txt
+
+      - name: Keep the build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: jtokens-windows-x64
+          path: |
+            dist/JTokens.exe
+            dist/JTokens-windows-x64.zip
+            dist/SHA256SUMS.txt
+
+  release:
+    name: Publish release
+    needs: gate
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Get the build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: jtokens-windows-x64
+          path: dist
+
+      - name: Version and notes
+        id: meta
+        shell: bash
+        run: |
+          v=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          tag="v$v"
+          awk -v h="## $tag" '$0==h{f=1;next} /^## /{if(f)exit} f' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          test -s "$RUNNER_TEMP/notes.md" || { echo "CHANGELOG.md has no section for $tag"; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          # JTokens.exe keeps one name in every release, so
+          # releases/latest/download/JTokens.exe always gets the newest build.
+          files="dist/JTokens.exe dist/JTokens-windows-x64.zip dist/SHA256SUMS.txt"
+          for i in 1 2 3 4 5; do
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" $files -R "$GITHUB_REPOSITORY" --clobber && exit 0
+            else
+              gh release create "$TAG" $files -R "$GITHUB_REPOSITORY" --target "$TARGET_SHA" \
+                --title "JTokens $TAG" --notes-file "$RUNNER_TEMP/notes.md" && exit 0
+            fi
+            echo "Publish try $i failed; retrying."
+            sleep $((20 * i))
+          done
+          echo "Could not publish the release."
+          exit 1

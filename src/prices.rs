@@ -1,8 +1,8 @@
-// API list prices in USD per million tokens, checked 2026-10-29.
+// API list prices in USD per million tokens, checked 2026-11-10.
 // Claude: https://platform.claude.com/docs/en/about-claude/pricing
 // OpenAI: https://developers.openai.com/api/docs/pricing (Standard tier)
 
-pub const CHECKED: &str = "2026-10-29";
+pub const CHECKED: &str = "2026-11-10";
 pub const SOURCES: [&str; 2] = [
     "https://platform.claude.com/docs/en/about-claude/pricing",
     "https://developers.openai.com/api/docs/pricing",
@@ -57,6 +57,7 @@ const fn fast(mut p: Price, i: f64, out: f64) -> Price {
 
 pub static PRICES: &[Price] = &[
     // Anthropic
+    fast(c("claude-fable-5-2", "Claude Fable 5.2", 8.0, 0.20, 40.0), 16.0, 80.0),
     c("claude-fable-5-1", "Claude Fable 5.1", 10.0, 0.25, 50.0),
     c("claude-mythos-5-1", "Claude Mythos 5.1", 10.0, 0.25, 50.0),
     c("claude-fable-5", "Claude Fable 5", 10.0, 1.0, 50.0),

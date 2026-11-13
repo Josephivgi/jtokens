@@ -673,11 +673,52 @@ fn serve() {
     }
 }
 
+const HELP: &str = "JTokens: Claude Code and Codex token usage and API cost
+
+  jtokens                                open the app
+  jtokens --smoke --report r.json        scan twice with no window, write timings and totals
+  jtokens --smoke-gui --report r.json    boot the real window hidden, scan, render, report, exit
+  jtokens --export out.html              write the dashboard with data baked in
+  jtokens --json data.json               write the raw data the UI uses
+  jtokens --serve                        scan on each `scan` line from stdin, answer JSON lines
+  jtokens --version                      print the version";
+
+/// Shows an error box. The release build has no console and aborts on panic,
+/// so without this a failure would close the app with no message.
+fn error_box(msg: &str) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn MessageBoxW(h: isize, text: *const u16, caption: *const u16, kind: u32) -> i32;
+    }
+    let w = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (t, c) = (w(msg), w("JTokens"));
+    unsafe {
+        MessageBoxW(0, t.as_ptr(), c.as_ptr(), 0x10); // MB_ICONERROR
+    }
+}
+
 fn main() {
-    unsafe { tk_init() };
     let args: Vec<String> = std::env::args().collect();
     let flag = |f: &str| args.iter().any(|a| a == f);
     let value = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
+    let quiet = flag("--serve") || flag("--smoke") || flag("--smoke-gui") || value("--export").is_some() || value("--json").is_some();
+    if !quiet {
+        std::panic::set_hook(Box::new(|info| error_box(&format!("JTokens stopped because of an error.
+
+{info}"))));
+    }
+
+    if flag("--version") || flag("-V") {
+        attach_console();
+        println!("jtokens {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if flag("--help") || flag("-h") {
+        attach_console();
+        println!("{HELP}");
+        return;
+    }
+    unsafe { tk_init() };
 
     if flag("--serve") {
         serve();
@@ -737,18 +778,26 @@ fn run_gui(smoke: bool, report: Option<String>) {
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
-    let window = WindowBuilder::new()
-        .with_title("JTokens")
+    let window = match WindowBuilder::new()
+        .with_title(format!("JTokens {}", env!("CARGO_PKG_VERSION")))
         .with_inner_size(LogicalSize::new(1360.0, 900.0))
+        .with_min_inner_size(LogicalSize::new(720.0, 480.0))
         .with_visible(!smoke)
+        .with_window_icon(<tao::window::Icon as tao::platform::windows::IconExtWindows>::from_resource(1, None).ok())
         .build(&event_loop)
-        .expect("window");
+    {
+        Ok(w) => w,
+        Err(e) => return fail(smoke, &report, &format!("Could not open the window: {e}")),
+    };
 
     let scanner = Arc::new(Mutex::new(Scanner::default()));
     let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let ipc_proxy = proxy.clone();
     let log_path = report.as_ref().map(|r| format!("{r}.log"));
-    let webview = WebViewBuilder::new()
+    // WebView2 keeps its profile next to the exe by default, which fails when
+    // JTokens sits in a folder the user can't write to (Program Files).
+    let mut web_context = wry::WebContext::new(Some(data_dir().join("WebView2")));
+    let webview = match WebViewBuilder::new_with_web_context(&mut web_context)
         .with_html(UI.replacen("data-theme=\"dark\"", &format!("data-theme=\"{}\"", load_theme()), 1))
         .with_background_color((17, 17, 16, 255))
         .with_devtools(cfg!(debug_assertions))
@@ -788,7 +837,19 @@ fn run_gui(smoke: bool, report: Option<String>) {
             }
         })
         .build(&window)
-        .expect("webview");
+    {
+        Ok(w) => w,
+        Err(e) => {
+            let msg = format!(
+                "JTokens needs the Microsoft Edge WebView2 Runtime, and it could not start.
+
+Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and open JTokens again.
+
+Details: {e}"
+            );
+            return fail(smoke, &report, &msg);
+        }
+    };
 
     let started = Instant::now();
     event_loop.run(move |event, _, cf| {
@@ -821,8 +882,25 @@ fn run_gui(smoke: bool, report: Option<String>) {
     });
 }
 
+fn fail(smoke: bool, report: &Option<String>, msg: &str) {
+    if smoke {
+        if let Some(p) = report {
+            let mut j = String::from("{\"error\":");
+            esc(msg, &mut j);
+            j.push('}');
+            let _ = fs::write(p, j);
+        }
+    } else {
+        error_box(msg);
+    }
+}
+
+fn data_dir() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(home).join("JTokens")
+}
+
 fn settings_path() -> PathBuf {
-    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(home).join("JTokens").join("settings.txt")
+    data_dir().join("settings.txt")
 }
 
 fn load_theme() -> &'static str {

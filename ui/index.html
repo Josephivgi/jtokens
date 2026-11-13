@@ -75,11 +75,12 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .kpi .v { font-size: 20px; font-weight: 650; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kpi .s { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.card .hd { display: flex; align-items: baseline; gap: 8px; flex: none; margin-bottom: 6px; }
-.card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
+/* narrow cards drop the hint so the title and buttons fit */
+@container (max-width: 380px) { .card .hd .sub { display: none; } }
+.card .hd { display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; }
+.card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; max-width: 100%; }
 .card .hd > .seg, .card .hd > .xp { flex: none; }
-.card h2 { flex-shrink: 0; max-width: 100%; }
 .card .hd .sub { flex: 0 1 auto; }
 .card:not(.max) #trendLegend { display: none; }
 .card .sub { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -87,7 +88,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .chart { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .chart > svg, .chart > .empty { position: absolute; inset: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0 0 4px; color: var(--text-secondary); font-size: 11px; flex: none; }
-.legend span { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend span[data-model] { cursor: pointer; }
 .legend span.off { opacity: .45; }
 .tm { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--accent) var(--k), var(--surface-1)); padding: 4px 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tm:not([data-proj]) { cursor: default; }
@@ -98,8 +100,10 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
 svg { display: block; overflow: visible; }
 svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
-.hit { fill: transparent; cursor: pointer; }
-.hit:hover + g rect, .bar:hover { opacity: .85; }
+.hit { fill: transparent; }
+#daily .hit { cursor: pointer; }
+.hit:hover { fill: var(--text-primary); fill-opacity: .06; }
+.hit:focus-visible { outline: none; stroke: var(--focus); stroke-width: 2; }
 .selected-band { fill: var(--text-primary); opacity: .07; }
 .hbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; align-items: center; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
 .hbar:hover { background: var(--surface-2); }
@@ -118,8 +122,9 @@ svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
 .mixrow span + span { text-align: right; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-th { color: var(--text-secondary); font-weight: 600; font-size: 12px; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
+th { color: var(--text-secondary); font-weight: 600; font-size: 12px; user-select: none; position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
 td.num, th.num { text-align: right; }
+th[data-sort] { cursor: pointer; }
 td.wrap { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
 tbody tr { cursor: pointer; }
 tbody tr:hover td { background-color: var(--surface-2); }
@@ -150,11 +155,10 @@ footer { flex: none; display: flex; gap: 12px; align-items: center; color: var(-
 .appver button:disabled { color: var(--text-muted); cursor: default; }
 .seg.mini button { padding: 2px 8px; font-size: 11px; }
 .card .hd .spacer { flex: 1; }
-.card .hd { align-items: center; }
 .xp { background: none; border: 1px solid transparent; border-radius: 6px; color: var(--text-muted); cursor: pointer; padding: 3px; display: inline-flex; line-height: 0; }
 .xp:hover { color: var(--text-primary); border-color: var(--border); background: var(--surface-2); }
 .btn.icon { padding: 4px 8px; line-height: 0; display: inline-flex; align-items: center; height: 29px; }
-body.has-max header { position: relative; z-index: 31; }
+body.has-max header, body.has-max .bar2, body.has-max .update { position: relative; z-index: 31; }
 .card.max { position: fixed; inset: var(--max-top, 0) 16px 12px; z-index: 30; padding: 14px 20px; box-shadow: 0 0 0 100vmax var(--surface-0); }
 .card.max .hd { margin-bottom: 10px; }
 .card.max h2 { font-size: 16px; }
@@ -166,6 +170,7 @@ body.has-max header { position: relative; z-index: 31; }
 .card.max .xcol { display: table-cell; }
 .avg { stroke: var(--text-secondary); stroke-dasharray: 4 4; stroke-width: 1; }
 svg text.avg-l { fill: var(--text-secondary); font-size: 11px; }
+svg tspan.avg-s { fill: var(--text-muted); font-size: 10px; }
 svg text.vl { fill: var(--text-secondary); font-size: 11px; }
 .kpi { position: relative; }
 .kpi .spark { position: absolute; right: 12px; top: 22px; }
@@ -298,10 +303,10 @@ const fmtVal = (v) => state.metric === "cost" ? fmtUsd(v) : fmtTok(v);
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
-const dtLabel = (ts) => ts ? new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+// logs are bucketed by hour, so times show the hour only
+const dtLabel = (ts) => ts ? new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" }) : "";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const baseName = (p) => { const parts = p.split(/[\\/]/).filter(Boolean); return parts.length ? parts[parts.length - 1] : p; };
-const cssVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 
 function dayOf(hour) {
   let k = dayOfHour.get(hour);
@@ -312,8 +317,24 @@ function localHour(hour) { return new Date(hour * 3600000).getHours(); }
 
 // ---------- data intake
 window.tkData = function (data) {
+  // filters hold array indices; carry them over by id, since a rescan can reorder
+  const keep = D ? { m: state.model !== null ? D.models[state.model].id : null, s: state.sess !== null ? D.sessions[state.sess][1] : null, p: state.proj !== null ? D.projects[state.proj] : null } : null;
   D = data;
   dayOfHour = new Map();
+  // per row: [9] local day key, [10] local hour, [11] weekday (Mon = 0); worked out once per scan
+  D.sFirst = new Array(D.sessions.length).fill(Infinity); D.sLast = new Array(D.sessions.length).fill(0);
+  for (const r of D.rows) {
+    const d = new Date(r[2] * 3600000);
+    r[9] = dayKey(d); r[10] = d.getHours(); r[11] = (d.getDay() + 6) % 7;
+    if (r[2] < D.sFirst[r[1]]) D.sFirst[r[1]] = r[2];
+    if (r[2] > D.sLast[r[1]]) D.sLast[r[1]] = r[2];
+  }
+  if (keep) {
+    const at = (i) => i < 0 ? null : i;
+    state.model = keep.m === null ? null : at(D.models.findIndex((m) => m.id === keep.m));
+    state.sess = keep.s === null ? null : at(D.sessions.findIndex((x) => x[1] === keep.s));
+    state.proj = keep.p === null ? null : at(D.projects.indexOf(keep.p));
+  }
   // fixed colors: top models by all-time cost (tokens as tie-break) get slots, rest are Other
   const tot = new Map();
   for (const r of D.rows) { const t = tot.get(r[0]) || [0, 0]; t[0] += r[7]; t[1] += r[3] + r[4] + r[5] + r[6]; tot.set(r[0], t); }
@@ -347,6 +368,7 @@ function selfCheck() {
 }
 
 // ---------- filtering
+let RS = null; // first day key of the range, refreshed by render()
 function rangeStart() {
   if (!state.range) return null;
   const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (state.range - 1));
@@ -358,10 +380,9 @@ function passes(r, opts = {}) {
   if (!opts.ignoreModel && state.model !== null && r[0] !== state.model) return false;
   if (!opts.ignoreSess && state.sess !== null && r[1] !== state.sess) return false;
   if (!opts.ignoreProj && state.proj !== null && D.sessions[r[1]][2] !== state.proj) return false;
-  const dk = dayOf(r[2]);
+  const dk = r[9];
   if (opts.win) return dk >= opts.win[0] && dk < opts.win[1];
-  const rs = rangeStart();
-  if (rs && dk < rs) return false;
+  if (RS && dk < RS) return false;
   if (!opts.ignoreDay && state.day && (dk < state.day[0] || dk > state.day[1])) return false;
   return true;
 }
@@ -370,6 +391,10 @@ const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
 // ---------- render
 function render() {
   if (!D) return;
+  RS = rangeStart();
+  tipKey = null;
+  // keep each list's scroll position across redraws (Live refreshes every 10 s)
+  const scrolls = [...document.querySelectorAll(".card .body")].map((el) => [el, el.scrollTop]);
   renderFilters();
   renderKpis();
   renderDaily();
@@ -379,6 +404,7 @@ function render() {
   renderSessions();
   renderProjects();
   renderPrices();
+  for (const [el, t] of scrolls) el.scrollTop = t;
   $("#dailyTitle").textContent = state.metric === "cost" ? "Daily API cost by model" : "Daily tokens by model";
 }
 
@@ -403,14 +429,15 @@ function renderKpis() {
     if (!passes(r)) continue;
     const t = r[3] + r[4] + r[5] + r[6];
     cost += r[7]; tok += t; reqs += r[8];
-    sess.add(r[1]); days.add(dayOf(r[2]));
+    sess.add(r[1]); days.add(r[9]);
     if (!D.models[r[0]].priced) unpricedTok += t;
     const pr = priceOf[r[0]];
-    if (pr) { saved += r[5] * (pr.in - pr.cr) / 1e6; readTok += r[5]; }
+    // reads cost less than input; writes cost more (Claude), so count both at base list price
+    if (pr) { saved += r[5] * (pr.in - pr.cr) / 1e6 - r[6] * ((pr.w5 || pr.in) - pr.in) / 1e6; readTok += r[5]; }
   }
   const perDay = days.size ? cost / days.size : 0;
   // the same numbers for the period just before this one, and a per-day trend
-  const rs = rangeStart();
+  const rs = RS;
   let prev = null, trend = null;
   if (rs && !state.day) {
     const [y, m, d] = rs.split("-").map(Number);
@@ -419,7 +446,7 @@ function renderKpis() {
     const win = [dayKey(from), rs];
     for (const r of D.rows) {
       if (!passes(r, { win })) continue;
-      prev.cost += r[7]; prev.tok += r[3] + r[4] + r[5] + r[6]; prev.reqs += r[8]; prev.days.add(dayOf(r[2]));
+      prev.cost += r[7]; prev.tok += r[3] + r[4] + r[5] + r[6]; prev.reqs += r[8]; prev.days.add(r[9]);
     }
     prev.perDay = prev.days.size ? prev.cost / prev.days.size : 0;
     if (state.range > 1) {
@@ -428,7 +455,7 @@ function renderKpis() {
       trend = { cost: keys.map(() => 0), tok: keys.map(() => 0), reqs: keys.map(() => 0), sess: keys.map(() => new Set()) };
       for (const r of D.rows) {
         if (!passes(r)) continue;
-        const i = at.get(dayOf(r[2])); if (i === undefined) continue;
+        const i = at.get(r[9]); if (i === undefined) continue;
         trend.cost[i] += r[7]; trend.tok[i] += r[3] + r[4] + r[5] + r[6]; trend.reqs[i] += r[8]; trend.sess[i].add(r[1]);
       }
       trend.sess = trend.sess.map((x) => x.size);
@@ -447,15 +474,14 @@ function renderKpis() {
     ["Tokens", fmtTok(tok), delta(tok, prev && prev.tok, fmtTok, "input, output and cache"), trend && trend.tok],
     ["Requests", fmtInt(reqs), delta(reqs, prev && prev.reqs, fmtInt, "model calls"), trend && trend.reqs],
     ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`, trend && trend.sess],
-    ["Per active day", fmtUsd(perDay), delta(perDay, prev && prev.perDay, fmtUsd, "API cost"), null],
-    ["Cache saved", fmtUsd(saved), `${fmtTok(readTok)} cache reads vs full input price`, null],
+    ["Per active day", fmtUsd(perDay), delta(perDay, prev && prev.perDay, fmtUsd, "days with use only"), null],
+    ["Cache saved", fmtUsd(saved), `est. at list price, after write cost`, null],
   ];
   $("#kpis").innerHTML = tiles.map(([l, v, s, t]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
   // say why a source is empty instead of showing a blank chart
   const notes = [];
   for (const src of state.src === "all" ? [0, 1] : [+state.src]) {
     const last = D.lastBySrc[src];
-    const rs = rangeStart();
     if (!last) notes.push(`No ${SRC_NAME[src]} usage found on this computer.`);
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
@@ -483,92 +509,99 @@ function legendHtml(models) {
   for (const m of models) {
     const c = colorOf[m];
     if (c === "--other") { if (!seen.has("other")) { seen.add("other"); items.push(`<span><i style="background:var(--other)"></i>Other models</span>`); } continue; }
-    items.push(`<span data-model="${m}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:var(${c})"></i>${esc(D.models[m].name)}</span>`);
+    items.push(`<span data-model="${m}" tabindex="0" role="button" aria-pressed="${state.model === m}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:var(${c})"></i>${esc(D.models[m].name)}</span>`);
   }
   return items.join("");
 }
 
 function renderDaily() {
-  // collect days in range
-  const rs = rangeStart();
+  // the days in range; long ranges fold into weeks so bars stay readable
   let start;
-  const keys = [];
-  if (rs) { const [y, m, d] = rs.split("-").map(Number); start = new Date(y, m - 1, d); }
+  if (RS) { const [y, m, d] = RS.split("-").map(Number); start = new Date(y, m - 1, d); }
   else {
     let min = null;
-    for (const r of D.rows) if (passes(r, { ignoreDay: true })) { const k = dayOf(r[2]); if (!min || k < min) min = k; }
+    for (const r of D.rows) if (passes(r, { ignoreDay: true })) { if (!min || r[9] < min) min = r[9]; }
     if (!min) { $("#daily").innerHTML = `<div class="empty">No usage in this range.</div>`; $("#dailyLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
+  const days = [];
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) keys.push(dayKey(d));
-  const idx = new Map(keys.map((k, i) => [k, i]));
-  const per = keys.map(() => new Map());
+  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) days.push(dayKey(d));
+  const running = state.dailyMode === "total";
+  const { W, H } = boxOf("#daily"), L = 52, B = 22, T = 8, R = running ? 8 : 64;
+  const plotW = W - L - R, plotH = H - B - T;
+  const step = plotW / days.length < 4 ? 7 : 1;
+  const buckets = [];
+  for (let i = 0; i < days.length; i += step) buckets.push({ from: days[i], to: days[Math.min(i + step - 1, days.length - 1)] });
+  const idx = new Map(days.map((k, i) => [k, Math.floor(i / step)]));
+  const per = buckets.map(() => new Map());
   const used = [];
   for (const r of D.rows) {
     if (!passes(r, { ignoreDay: true })) continue;
-    const i = idx.get(dayOf(r[2])); if (i === undefined) continue;
+    const i = idx.get(r[9]); if (i === undefined) continue;
     const key = colorOf[r[0]] === "--other" ? -1 : r[0];
     per[i].set(key, (per[i].get(key) || 0) + val(r));
     used.push(r);
   }
   const models = topModelsFor(used);
-  const running = state.dailyMode === "total";
   $("#dailyLegend").innerHTML = legendHtml(models);
   const stackOrder = models.filter((m) => colorOf[m] !== "--other"); stackOrder.push(-1);
   const totals = per.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
-  // running total per model: the stack grows day by day
+  // running total per model: the stack grows bar by bar
   const cum = [];
   { const acc = new Map(); per.forEach((m) => { for (const [k, v] of m) acc.set(k, (acc.get(k) || 0) + v); cum.push(new Map(acc)); }); }
   const cumTot = cum.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
   const series = running ? cum : per, tots = running ? cumTot : totals;
   const max = Math.max(...tots, 0);
   if (max <= 0) { $("#daily").innerHTML = `<div class="empty">No usage in this range.</div>`; return; }
-  const { W, H } = boxOf("#daily"), L = 52, B = 22, T = 8, R = running ? 8 : 64;
-  const plotW = W - L - R, plotH = H - B - T;
-  const n = keys.length, slot = plotW / n, bw = Math.max(2, Math.min(64, slot * (running ? 0.86 : 0.72)));
+  const n = buckets.length, slot = plotW / n, bw = Math.max(1, Math.min(64, slot * (running ? 0.86 : 0.72)));
+  const unit = step === 1 ? "day" : "week";
+  const name = (b) => step === 1 ? dayLabel(b.from) : "Week of " + dayLabel(b.from);
+  const sel = (b) => !!state.day && b.to >= state.day[0] && b.from <= state.day[1];
+  const focusable = n <= 120;
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4);
   const y = (v) => T + plotH - (v / ticks[ticks.length - 1]) * plotH;
-  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily usage chart">`;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${running ? "Running total" : "Usage"} per ${unit}">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${fmtVal(t)}</text>`;
   const labelEvery = Math.ceil(n / Math.max(2, Math.floor(plotW / 58)));
-  keys.forEach((k, i) => {
+  buckets.forEach((b, i) => {
     const x = L + i * slot + (slot - bw) / 2;
-    if (inSpan(k)) s += `<rect class="selected-band" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
+    if (sel(b)) s += `<rect class="selected-band" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
     let acc = 0; const segs = [];
     for (const m of stackOrder) {
       const v = series[i].get(m) || 0; if (v <= 0) continue;
       segs.push([m, acc, v]); acc += v;
     }
+    const dim = state.day && !sel(b) ? ' opacity="0.35"' : "";
     segs.forEach(([m, a, v], j) => {
       const y0 = y(a), y1 = y(a + v);
-      const h = Math.max(0, y0 - y1 - (j > 0 && !running ? 2 : 0));
+      const h = Math.max(0, y0 - y1 - (j > 0 && !running && bw > 3 ? 2 : 0));
       const top = j === segs.length - 1;
       const color = m === -1 ? "var(--other)" : `var(${colorOf[m]})`;
-      const dim = state.day && !inSpan(k) ? ' opacity="0.35"' : "";
       if (h <= 0) return;
-      if (top && h > 4) s += `<path d="${roundTop(x, y1, bw, h, running ? 2 : 3)}" fill="${color}"${dim}/>`;
+      if (top && h > 4 && bw > 4) s += `<path d="${roundTop(x, y1, bw, h, running ? 2 : 3)}" fill="${color}"${dim}/>`;
       else s += `<rect x="${x}" y="${y1}" width="${bw}" height="${h}" fill="${color}"${dim}/>`;
     });
-    if (i % labelEvery === 0) s += `<text x="${L + i * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${dayLabel(k)}</text>`;
+    if (i % labelEvery === 0) s += `<text x="${L + i * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${dayLabel(b.from)}</text>`;
     if (!running && slot >= 34 && totals[i] > 0) s += `<text x="${L + i * slot + slot / 2}" y="${y(totals[i]) - 5}" text-anchor="middle" class="vl">${fmtVal(totals[i])}</text>`;
-    s += `<rect class="hit" data-day="${k}" data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
+    const a11y = focusable ? ` tabindex="0" role="button" aria-label="${esc(name(b))}: ${fmtVal(tots[i])}${running ? " so far" : ""}"` : "";
+    s += `<rect class="hit" data-day="${b.from}" data-to="${b.to}" data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
   if (running) {
     s += `<text x="${W - R}" y="${T + 12}" text-anchor="end" class="callout">${fmtVal(cumTot[n - 1])} total</text>`;
   } else {
-    // average per day over the range, as a dashed line labelled on the right
+    // average per bar over the whole range, idle days included
     const avg = totals.reduce((a, b) => a + b, 0) / n;
-    s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) + 4}" class="avg-l">avg ${fmtVal(avg)}</text>`;
+    s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) - 2}" class="avg-l">avg ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}, all</tspan></text>`;
   }
   s += `</svg>`;
   $("#daily").innerHTML = s;
-  const el = $("#daily svg");
-  el._tip = (i) => {
-    const m = per[i];
+  $("#daily svg")._tip = (i) => {
+    const m = series[i];
     const rows = stackOrder.filter((k) => (m.get(k) || 0) > 0).map((k) => [k === -1 ? "Other models" : D.models[k].name, k === -1 ? "var(--other)" : `var(${colorOf[k]})`, m.get(k)]);
-    return `<div class="h">${dayLabel(keys[i])}: ${fmtVal(totals[i])}</div>` + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("")
-      + `<div class="r tsep"><span>Running total</span><span>${fmtVal(cumTot[i])}</span></div>`;
+    const head = running ? `${name(buckets[i])}: ${fmtVal(cumTot[i])} so far` : `${name(buckets[i])}: ${fmtVal(totals[i])}`;
+    const foot = running ? `<div class="r tsep"><span>That ${unit}</span><span>${fmtVal(totals[i])}</span></div>` : `<div class="r tsep"><span>Running total</span><span>${fmtVal(cumTot[i])}</span></div>`;
+    return `<div class="h">${head}</div>` + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("") + foot;
   };
 }
 
@@ -613,7 +646,7 @@ function niceTicks(max, count) {
 function renderModels() {
   const trend = state.modelMode === "trend";
   $("#models").hidden = trend; $("#modelTrend").hidden = !trend; $("#trendLegend").hidden = !trend;
-  $("#modelSub").textContent = trend ? (document.querySelector(".card.max #modelTrend") ? "Per day, click a name to filter" : "Per day, hover for names") : "Click to filter";
+  if (!trend) $("#modelSub").textContent = "Click to filter";
   if (trend) return renderModelTrend();
   const agg = new Map();
   for (const r of D.rows) {
@@ -643,12 +676,12 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 // one line per model across the days in range
 function renderModelTrend() {
   $("#modelSub").textContent = $("#modelTrend").closest(".card").classList.contains("max") ? "Per day, click a name to filter" : "Per day, hover for names";
-  const rs = rangeStart(); const keys = [];
+  const rs = RS; const keys = [];
   let start;
   if (rs) { const [y, m, d] = rs.split("-").map(Number); start = new Date(y, m - 1, d); }
   else {
     let min = null;
-    for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { const k = dayOf(r[2]); if (!min || k < min) min = k; }
+    for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { const k = r[9]; if (!min || k < min) min = k; }
     if (!min) { $("#modelTrend").innerHTML = `<div class="empty">No usage.</div>`; $("#trendLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
@@ -658,7 +691,7 @@ function renderModelTrend() {
   const series = new Map(); const used = [];
   for (const r of D.rows) {
     if (!passes(r, { ignoreDay: true, ignoreModel: true })) continue;
-    const i = at.get(dayOf(r[2])); if (i === undefined) continue;
+    const i = at.get(r[9]); if (i === undefined) continue;
     const key = colorOf[r[0]] === "--other" ? -1 : r[0];
     if (!series.has(key)) series.set(key, new Array(keys.length).fill(0));
     series.get(key)[i] += val(r); used.push(r);
@@ -681,6 +714,8 @@ function renderModelTrend() {
     const pts = series.get(m).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
     const faded = state.model !== null && state.model !== m ? ' stroke-opacity="0.25"' : "";
     s += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-linejoin="round" stroke-linecap="round"${faded}/>`;
+    // a line needs two points; show dots when the range is that short
+    if (n <= 2) series.get(m).forEach((v, i) => { if (v > 0) s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${c}"${faded ? ' fill-opacity="0.25"' : ""}/>`; });
   }
   const slot = plotW / Math.max(1, n - 1);
   keys.forEach((k, i) => { s += `<rect class="hit" data-i="${i}" x="${x(i) - slot / 2}" y="${T}" width="${slot}" height="${plotH}"/>`; });
@@ -698,7 +733,7 @@ function renderHourly() {
   $("#hourSub").textContent = week ? "Local time, darker is more" : state.day ? "Local time" : "Local time, whole range";
   if (week) return renderHeat();
   const vals = new Array(24).fill(0);
-  for (const r of D.rows) { if (passes(r)) vals[localHour(r[2])] += val(r); }
+  for (const r of D.rows) { if (passes(r)) vals[r[10]] += val(r); }
   const max = Math.max(...vals);
   if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">No usage.</div>`; return; }
   const { W, H } = boxOf("#hourly"), L = 48, B = 22, T = 8, plotW = W - L - 4, plotH = H - B - T;
@@ -723,9 +758,9 @@ function renderHeat() {
   const v = new Array(7 * 24).fill(0), days = new Array(7).fill(null).map(() => new Set());
   for (const r of D.rows) {
     if (!passes(r)) continue;
-    const d = new Date(r[2] * 3600000), wd = (d.getDay() + 6) % 7;
-    v[wd * 24 + d.getHours()] += val(r);
-    days[wd].add(dayOf(r[2]));
+    const wd = r[11];
+    v[wd * 24 + r[10]] += val(r);
+    days[wd].add(r[9]);
   }
   const max = Math.max(...v);
   if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">No usage.</div>`; return; }
@@ -781,22 +816,25 @@ function renderSessions() {
     a.models.set(r[0], (a.models.get(r[0]) || 0) + r[7] + 1e-12 * (r[3] + r[4]));
     a.first = Math.min(a.first, r[2]); a.last = Math.max(a.last, r[2]);
   }
-  const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => a[1].first, last: (a) => a[1].last, title: (a) => (D.sessions[a[0]][3] || "").toLowerCase() }[state.sort] || ((a) => a[1].cost);
+  const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => D.sFirst[a[0]], last: (a) => D.sLast[a[0]], title: (a) => (D.sessions[a[0]][3] || "").toLowerCase() }[state.sort] || ((a) => a[1].cost);
   const list = [...agg.entries()].sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * state.sortDir; }).slice(0, 300);
+  // keep the selected session visible even when it is outside the top 300
+  if (state.sess !== null && agg.has(state.sess) && !list.some(([si]) => si === state.sess)) list.push([state.sess, agg.get(state.sess)]);
   if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; return; }
   // the Tool column only helps when both tools are in the list
   const showTool = state.src === "all" && D.lastBySrc[0] > 0 && D.lastBySrc[1] > 0;
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
   const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
+  const sortAttr = (k) => ` data-sort="${k}" tabindex="0" aria-sort="${state.sort === k ? (state.sortDir < 0 ? "descending" : "ascending") : "none"}"`;
   $("#sessions").innerHTML = `<table><thead><tr>
-      <th data-sort="title">Session${arrow("title")}</th>${showTool ? "<th>Tool</th>" : ""}<th class="xcol">Project</th><th>Main model</th><th data-sort="start">Started${arrow("start")}</th><th class="xcol" data-sort="last">Last active${arrow("last")}</th>
-      <th class="num" data-sort="reqs">Requests${arrow("reqs")}</th><th class="num" data-sort="tokens">Tokens${arrow("tokens")}</th><th class="num" data-sort="cost">API cost${arrow("cost")}</th></tr></thead><tbody>
+      <th${sortAttr("title")}>Session${arrow("title")}</th>${showTool ? "<th>Tool</th>" : ""}<th class="xcol">Project</th><th>Main model</th><th${sortAttr("start")}>Started${arrow("start")}</th><th class="xcol"${sortAttr("last")}>Last active${arrow("last")}</th>
+      <th class="num"${sortAttr("reqs")}>Requests${arrow("reqs")}</th><th class="num"${sortAttr("tokens")}>Tokens${arrow("tokens")}</th><th class="num"${sortAttr("cost")}>API cost${arrow("cost")}</th></tr></thead><tbody>
     ${list.map(([si, a]) => {
       const s = D.sessions[si];
       const main = [...a.models.entries()].sort((x, y) => y[1] - x[1])[0][0];
       const title = s[3] || baseName(D.projects[s[2]]) + " · " + s[1].slice(0, 8);
-      return `<tr data-sess="${si}" aria-selected="${state.sess === si}" title="${esc(D.projects[s[2]])}\n${esc(s[1])}">
-        <td class="wrap">${esc(title)}</td>${showTool ? `<td class="muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted">${esc(baseName(D.projects[s[2]]))}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(a.first * 3600)}</td><td class="xcol muted">${dtLabel(a.last * 3600)}</td>
+      return `<tr data-sess="${si}" tabindex="0" aria-selected="${state.sess === si}" title="${esc(D.projects[s[2]])}\n${esc(s[1])}">
+        <td class="wrap">${esc(title)}</td>${showTool ? `<td class="muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted">${esc(baseName(D.projects[s[2]]))}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
         <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${fmtUsd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > 300 ? `<div class="note">Showing the top 300 of ${fmtInt(agg.size)} sessions.</div>` : ""}`;
@@ -836,11 +874,11 @@ function renderProjMap(list) {
   const top = Math.max(...keep.filter((it) => it.p !== null).map((it) => it.v));
   el.innerHTML = rects.map(([x, y, w, h], i) => {
     const it = keep[i], share = it.v / total * 100;
-    const strength = it.p === null ? 12 : Math.round(22 + 58 * Math.sqrt(it.v / top));
+    const strength = it.p === null ? 12 : Math.round(20 + 40 * Math.sqrt(it.v / top)); // capped so labels keep contrast
     const name = it.p === null ? `${it.n} more` : baseName(D.projects[it.p]);
     const big = w > 70 && h > 38, small = w > 34 && h > 18;
     const tip = it.p === null ? `${it.n} smaller projects` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${fmtUsd(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
-    return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}"` : ""} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
+    return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="0" role="button" aria-label="${esc(name)}: ${fmtVal(it.v)}"` : ""} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
   }).join("");
 }
 
@@ -855,16 +893,17 @@ function renderProjects() {
     let a = agg.get(p); if (!a) { a = { cost: 0, tok: 0, sess: new Set() }; agg.set(p, a); }
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.sess.add(r[1]);
   }
-  const list = [...agg.entries()].sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok).slice(0, 200);
+  const all = [...agg.entries()].sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok);
+  const list = all.slice(0, 200);
   const pmax = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
   const map = state.projMode === "map";
   $("#projects").hidden = map; $("#projMap").hidden = !map;
-  if (map) return renderProjMap(list);
+  if (map) return renderProjMap(all);
   if (!list.length) { $("#projects").innerHTML = `<div class="empty">No projects.</div>`; return; }
   $("#projects").innerHTML = `<table><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">${state.metric === "cost" ? "API cost" : "Tokens"}</th></tr></thead><tbody>
-    ${list.map(([p, a]) => `<tr data-proj="${p}" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}
+    ${list.map(([p, a]) => `<tr data-proj="${p}" tabindex="0" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}
 ${fmtTok(a.tok)} tokens, ${fmtUsd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? fmtUsd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
-  </tbody></table>`;
+  </tbody></table>${all.length > 200 ? `<div class="note">Top 200 of ${fmtInt(all.length)} projects. The map counts all of them.</div>` : ""}`;
 }
 
 function renderPrices() {
@@ -883,13 +922,15 @@ function renderPrices() {
 
 // ---------- interaction
 const tip = $("#tip");
+let tipKey = null;
 document.addEventListener("mousemove", (e) => {
   const hit = e.target.closest && e.target.closest(".hit");
-  if (!hit) { tip.style.display = "none"; return; }
+  if (!hit) { tip.style.display = "none"; tipKey = null; return; }
   const svg = hit.ownerSVGElement;
   const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
   if (!svg || !svg._tip) return;
-  tip.innerHTML = svg._tip(k);
+  const key = svg.parentElement.id + ":" + k;
+  if (key !== tipKey) { tip.innerHTML = svg._tip(k); tipKey = key; }
   tip.style.display = "block";
   const w = tip.offsetWidth, h = tip.offsetHeight;
   let x = e.clientX + 14, y = e.clientY + 14;
@@ -924,18 +965,22 @@ document.addEventListener("click", (e) => {
   const clear = t.closest("[data-clear]");
   if (clear) { const k = clear.dataset.clear; if (k === "all") Object.assign(state, { day: null, model: null, proj: null, sess: null }); else state[k] = null; return render(); }
   const day = t.closest("[data-day]");
-  if (day) { const k = day.dataset.day; state.day = state.day && state.day[0] === k && state.day[1] === k ? null : [k, k]; return render(); }
+  if (day) { const k = day.dataset.day, k2 = day.dataset.to || k; state.day = state.day && state.day[0] === k && state.day[1] === k2 ? null : [k, k2]; render(); return refocus(e, `#daily [data-day="${k}"]`); }
   const model = t.closest("[data-model]");
-  if (model) { const m = +model.dataset.model; state.model = state.model === m ? null : m; return render(); }
+  if (model) { const m = +model.dataset.model, where = model.closest("[id]").id; state.model = state.model === m ? null : m; render(); return refocus(e, `#${where} [data-model="${m}"]`); }
   const sort = t.closest("[data-sort]");
-  if (sort) { const k = sort.dataset.sort; if (state.sort === k) state.sortDir *= -1; else { state.sort = k; state.sortDir = k === "title" ? 1 : -1; } return renderSessions(); }
+  if (sort) { const k = sort.dataset.sort; if (state.sort === k) state.sortDir *= -1; else { state.sort = k; state.sortDir = k === "title" ? 1 : -1; } renderSessions(); return refocus(e, `#sessions th[data-sort="${k}"]`); }
   const sess = t.closest("[data-sess]");
-  if (sess) { const s = +sess.dataset.sess; state.sess = state.sess === s ? null : s; return render(); }
+  if (sess) { const s = +sess.dataset.sess; state.sess = state.sess === s ? null : s; render(); return refocus(e, `#sessions [data-sess="${s}"]`); }
   const proj = t.closest("[data-proj]");
-  if (proj) { const p = +proj.dataset.proj; state.proj = state.proj === p ? null : p; state.sess = null; return render(); }
+  if (proj) { const p = +proj.dataset.proj, where = proj.closest("[id]").id; state.proj = state.proj === p ? null : p; state.sess = null; render(); return refocus(e, `#${where} [data-proj="${p}"]`); }
 });
+// a click from the keyboard (detail 0) puts focus back on the same item after the redraw
+function refocus(e, sel) { if (e.detail === 0) { const el = document.querySelector(sel); if (el) el.focus(); } }
 document.addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === " ") && e.target.matches(".hbar")) { e.preventDefault(); e.target.click(); }
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".hbar, [data-day], [data-sess], [data-proj], [data-model], [data-sort]")) {
+    e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); return;
+  }
   if (e.key === "F11") { e.preventDefault(); return setFullscreen(!isFullscreen); }
   if (e.key === "Escape") {
     if (document.querySelector(".card.max")) return expandCard(null);
@@ -949,15 +994,23 @@ const ICON_EXPAND = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden
 const ICON_SHRINK = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 2v4H2M14 6h-4V2M10 14v-4h4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 document.querySelectorAll(".board .card .hd").forEach((hd) => {
   if (!hd.querySelector(".spacer")) hd.insertAdjacentHTML("beforeend", `<span class="spacer"></span>`);
-  hd.insertAdjacentHTML("beforeend", `<button class="xp" type="button" data-expand title="Full screen (Esc to close)" aria-label="Full screen">${ICON_EXPAND}</button>`);
+  const what = hd.querySelector("h2").textContent.replace(/^Daily .*/, "Daily chart");
+  hd.insertAdjacentHTML("beforeend", `<button class="xp" type="button" data-expand data-what="${esc(what)}" title="Full screen (Esc to close)" aria-label="Full screen: ${esc(what)}">${ICON_EXPAND}</button>`);
 });
 function expandCard(card) {
   const open = document.querySelector(".card.max");
-  if (open) { open.classList.remove("max"); const b = open.querySelector("[data-expand]"); b.innerHTML = ICON_EXPAND; b.title = "Full screen (Esc to close)"; b.setAttribute("aria-label", "Full screen"); }
-  if (card && card !== open) { document.documentElement.style.setProperty("--max-top", Math.ceil($("header").getBoundingClientRect().bottom + 8) + "px"); card.classList.add("max"); const b = card.querySelector("[data-expand]"); b.innerHTML = ICON_SHRINK; b.title = "Close full screen (Esc)"; b.setAttribute("aria-label", "Close full screen"); b.focus(); }
-  document.body.classList.toggle("has-max", !!document.querySelector(".card.max"));
+  if (open) { open.classList.remove("max"); const b = open.querySelector("[data-expand]"); b.innerHTML = ICON_EXPAND; b.title = "Full screen (Esc to close)"; b.setAttribute("aria-label", "Full screen: " + b.dataset.what); }
+  if (card && card !== open) { window.scrollTo(0, 0); card.classList.add("max"); placeMax(); const b = card.querySelector("[data-expand]"); b.innerHTML = ICON_SHRINK; b.title = "Close full screen (Esc)"; b.setAttribute("aria-label", "Close full screen: " + b.dataset.what); b.focus(); }
+  const max = document.querySelector(".card.max");
+  document.body.classList.toggle("has-max", !!max);
+  // only the open card (and the controls above it) take focus
+  document.querySelectorAll(".board .card, .kpis, footer").forEach((el) => { el.inert = !!max && el !== max; });
+  if (!max && open) open.querySelector("[data-expand]").focus();
   tip.style.display = "none";
 }
+// the open card starts under the filter line, so active filters stay visible
+function placeMax() { document.documentElement.style.setProperty("--max-top", Math.max(8, Math.ceil($(".bar2").getBoundingClientRect().bottom + 8)) + "px"); }
+window.addEventListener("resize", () => { if (document.querySelector(".card.max")) placeMax(); });
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-expand]"); if (b) expandCard(b.closest(".card")); });
 document.addEventListener("dblclick", (e) => { const hd = e.target.closest(".board .card .hd"); if (hd && !e.target.closest("button")) expandCard(hd.closest(".card")); });
 let isFullscreen = false;
@@ -1000,13 +1053,14 @@ document.addEventListener("mouseup", () => {
   if (!drag) return;
   const d = drag; drag = null;
   if (d.from === d.to) return; // a plain click: the click handler toggles that day
-  const ks = [d.from.dataset.day, d.to.dataset.day].sort();
-  state.day = ks;
+  const ks = [d.from.dataset.day, d.from.dataset.to, d.to.dataset.day, d.to.dataset.to].sort();
+  state.day = [ks[0], ks[3]];
   render();
 });
+window.addEventListener("blur", () => { if (drag) { if (drag.band) drag.band.remove(); drag = null; } });
 
 function requestScan() {
-  if (!window.ipc) return;
+  if (!window.ipc || $("#refresh").disabled) return;
   $("#refresh").disabled = true;
   window.ipc.postMessage("scan");
 }

@@ -77,13 +77,24 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .board { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .card .hd { display: flex; align-items: baseline; gap: 8px; flex: none; margin-bottom: 6px; }
-.card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; }
+.card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
+.card .hd > .seg, .card .hd > .xp { flex: none; }
+.card h2 { flex-shrink: 0; max-width: 100%; }
+.card .hd .sub { flex: 0 1 auto; }
+.card:not(.max) #trendLegend { display: none; }
 .card .sub { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .card .body { flex: 1; min-height: 0; overflow: auto; }
 .chart { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .chart > svg, .chart > .empty { position: absolute; inset: 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0 0 4px; color: var(--text-secondary); font-size: 11px; flex: none; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.legend span.off { opacity: .45; }
+.tm { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--accent) var(--k), var(--surface-1)); padding: 4px 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tm:not([data-proj]) { cursor: default; }
+.tm:hover { outline: 1px solid var(--text-secondary); }
+.tm.sel { outline: 2px solid var(--text-primary); }
+.tm b { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
+.tm span { font-size: 11px; color: var(--text-primary); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
 svg { display: block; overflow: visible; }
 svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
@@ -111,8 +122,10 @@ th { color: var(--text-secondary); font-weight: 600; font-size: 12px; cursor: po
 td.num, th.num { text-align: right; }
 td.wrap { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
 tbody tr { cursor: pointer; }
-tbody tr:hover td { background: var(--surface-2); }
-tbody tr[aria-selected="true"] td { background: var(--surface-2); }
+tbody tr:hover td { background-color: var(--surface-2); }
+tbody tr[aria-selected="true"] td { background-color: var(--surface-2); }
+td.db { background-image: linear-gradient(to left, color-mix(in srgb, var(--accent) 75%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 16px) 2px; background-position: 8px calc(100% - 3px); }
+.drag-band { fill: var(--accent); opacity: .16; }
 .muted { color: var(--text-muted); }
 #tip { position: fixed; pointer-events: none; z-index: 50; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: none; max-width: 340px; }
 #tip .h { font-weight: 600; margin-bottom: 4px; }
@@ -210,7 +223,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     <div class="kpis" id="kpis"></div>
     <div class="board">
       <div class="card" id="c-daily">
-        <div class="hd"><h2 id="dailyTitle">Daily API cost by model</h2><span class="sub">Click a day to filter</span><span class="spacer"></span>
+        <div class="hd"><h2 id="dailyTitle">Daily API cost by model</h2><span class="sub">Click a day, or drag across days, to filter</span><span class="spacer"></span>
           <div class="seg mini" id="dailyMode" role="group" aria-label="Daily chart view"><button data-v="day" aria-pressed="true">Per day</button><button data-v="total">Running total</button></div></div>
         <div class="legend" id="dailyLegend"></div>
         <div class="chart" id="daily"></div>
@@ -221,16 +234,21 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="chart" id="hourly"></div>
       </div>
       <div class="card">
-        <div class="hd"><h2>By model</h2><span class="sub">Click to filter</span></div>
+        <div class="hd"><h2>By model</h2><span class="sub" id="modelSub">Click to filter</span><span class="spacer"></span>
+          <div class="seg mini" id="modelMode" role="group" aria-label="Model view"><button data-v="list" aria-pressed="true">List</button><button data-v="trend">Trend</button></div></div>
         <div class="body" id="models"></div>
+        <div class="legend" id="trendLegend" hidden></div>
+        <div class="chart" id="modelTrend" hidden></div>
       </div>
       <div class="card" id="c-sessions">
         <div class="hd"><h2>Sessions</h2><span class="sub">Click a row to filter, a column to sort</span></div>
         <div class="body" id="sessions"></div>
       </div>
       <div class="card">
-        <div class="hd"><h2>Projects</h2><span class="sub">Working folder</span></div>
+        <div class="hd"><h2>Projects</h2><span class="sub">Working folder</span><span class="spacer"></span>
+          <div class="seg mini" id="projMode" role="group" aria-label="Project view"><button data-v="list" aria-pressed="true">List</button><button data-v="map">Map</button></div></div>
         <div class="body" id="projects"></div>
+        <div class="chart" id="projMap" hidden></div>
       </div>
       <div class="card">
         <div class="hd"><h2>Token mix</h2><span class="sub">Where the tokens went</span></div>
@@ -265,9 +283,10 @@ window.addEventListener("error", (e) => { if (window.ipc) window.ipc.postMessage
 const $ = (s) => document.querySelector(s);
 const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const SRC_NAME = ["Claude Code", "Codex"];
-const state = { src: "all", range: 30, metric: "cost", day: null, model: null, proj: null, sess: null, sort: "cost", sortDir: -1, tab: "overview", dailyMode: "day", hourMode: "hours" };
+const state = { src: "all", range: 30, metric: "cost", day: null, model: null, proj: null, sess: null, sort: "cost", sortDir: -1, tab: "overview", dailyMode: "day", hourMode: "hours", modelMode: "list", projMode: "list" };
 let D = null;            // data from the scanner
-let colorOf = [];        // model index -> css var (fixed per model, by all-time cost)
+let colorOf = [];
+let priceOf = [];        // model index -> css var (fixed per model, by all-time cost)
 let dayOfHour = new Map();
 let rendered = false;
 
@@ -300,6 +319,8 @@ window.tkData = function (data) {
   for (const r of D.rows) { const t = tot.get(r[0]) || [0, 0]; t[0] += r[7]; t[1] += r[3] + r[4] + r[5] + r[6]; tot.set(r[0], t); }
   const order = [...tot.keys()].sort((a, b) => (tot.get(b)[0] - tot.get(a)[0]) || (tot.get(b)[1] - tot.get(a)[1]));
   colorOf = new Array(D.models.length).fill("--other");
+  // list price row for each model, for the cache saved number
+  priceOf = D.models.map((m) => { const id = m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, ""); return m.priced ? D.prices.find((p) => p.id === id) || null : null; });
   order.slice(0, 7).forEach((m, i) => colorOf[m] = SLOTS[i]);
   const s = D.scan;
   const took = s.ms < 1000 ? Math.round(s.ms) + " ms" : (s.ms / 1000).toFixed(2) + " s";
@@ -341,7 +362,7 @@ function passes(r, opts = {}) {
   if (opts.win) return dk >= opts.win[0] && dk < opts.win[1];
   const rs = rangeStart();
   if (rs && dk < rs) return false;
-  if (!opts.ignoreDay && state.day && dk !== state.day) return false;
+  if (!opts.ignoreDay && state.day && (dk < state.day[0] || dk > state.day[1])) return false;
   return true;
 }
 const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
@@ -361,9 +382,12 @@ function render() {
   $("#dailyTitle").textContent = state.metric === "cost" ? "Daily API cost by model" : "Daily tokens by model";
 }
 
+const inSpan = (k) => !!state.day && k >= state.day[0] && k <= state.day[1];
+const spanLabel = () => state.day[0] === state.day[1] ? dayLabel(state.day[0]) : dayLabel(state.day[0]) + " to " + dayLabel(state.day[1]);
+
 function renderFilters() {
   const chips = [];
-  if (state.day) chips.push(["day", "Day: " + dayLabel(state.day)]);
+  if (state.day) chips.push(["day", (state.day[0] === state.day[1] ? "Day: " : "Days: ") + spanLabel()]);
   if (state.model !== null) chips.push(["model", "Model: " + D.models[state.model].name]);
   if (state.proj !== null) chips.push(["proj", "Project: " + baseName(D.projects[state.proj])]);
   if (state.sess !== null) { const s = D.sessions[state.sess]; chips.push(["sess", "Session: " + (s[3] || s[1].slice(0, 8))]); }
@@ -373,7 +397,7 @@ function renderFilters() {
 }
 
 function renderKpis() {
-  let cost = 0, tok = 0, reqs = 0, unpricedTok = 0;
+  let cost = 0, tok = 0, reqs = 0, unpricedTok = 0, saved = 0, readTok = 0;
   const sess = new Set(), days = new Set();
   for (const r of D.rows) {
     if (!passes(r)) continue;
@@ -381,6 +405,8 @@ function renderKpis() {
     cost += r[7]; tok += t; reqs += r[8];
     sess.add(r[1]); days.add(dayOf(r[2]));
     if (!D.models[r[0]].priced) unpricedTok += t;
+    const pr = priceOf[r[0]];
+    if (pr) { saved += r[5] * (pr.in - pr.cr) / 1e6; readTok += r[5]; }
   }
   const perDay = days.size ? cost / days.size : 0;
   // the same numbers for the period just before this one, and a per-day trend
@@ -417,12 +443,12 @@ function renderKpis() {
     return `<span class="dl" title="${prevName}: ${fmt(before)}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}`;
   };
   const tiles = [
-    ["API cost", fmtUsd(cost), delta(cost, prev && prev.cost, fmtUsd, state.range ? `last ${state.range === 1 ? "day" : state.range + " days"}` : "all time"), trend && trend.cost],
+    ["API cost", fmtUsd(cost), delta(cost, prev && prev.cost, fmtUsd, state.day ? spanLabel() : state.range ? `last ${state.range === 1 ? "day" : state.range + " days"}` : "all time"), trend && trend.cost],
     ["Tokens", fmtTok(tok), delta(tok, prev && prev.tok, fmtTok, "input, output and cache"), trend && trend.tok],
     ["Requests", fmtInt(reqs), delta(reqs, prev && prev.reqs, fmtInt, "model calls"), trend && trend.reqs],
     ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`, trend && trend.sess],
     ["Per active day", fmtUsd(perDay), delta(perDay, prev && prev.perDay, fmtUsd, "API cost"), null],
-    ["Unpriced tokens", fmtTok(unpricedTok), unpricedTok ? "models with no public price" : "every model has a price", null],
+    ["Cache saved", fmtUsd(saved), `${fmtTok(readTok)} cache reads vs full input price`, null],
   ];
   $("#kpis").innerHTML = tiles.map(([l, v, s, t]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
   // say why a source is empty instead of showing a blank chart
@@ -433,6 +459,7 @@ function renderKpis() {
     if (!last) notes.push(`No ${SRC_NAME[src]} usage found on this computer.`);
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
+  if (unpricedTok) notes.push(`${fmtTok(unpricedTok)} tokens from models with no public price are not in the cost.`);
   $("#problems").textContent = notes.join(" ");
 }
 
@@ -456,7 +483,7 @@ function legendHtml(models) {
   for (const m of models) {
     const c = colorOf[m];
     if (c === "--other") { if (!seen.has("other")) { seen.add("other"); items.push(`<span><i style="background:var(--other)"></i>Other models</span>`); } continue; }
-    items.push(`<span data-model="${m}"><i style="background:var(${c})"></i>${esc(D.models[m].name)}</span>`);
+    items.push(`<span data-model="${m}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:var(${c})"></i>${esc(D.models[m].name)}</span>`);
   }
   return items.join("");
 }
@@ -507,7 +534,7 @@ function renderDaily() {
   const labelEvery = Math.ceil(n / Math.max(2, Math.floor(plotW / 58)));
   keys.forEach((k, i) => {
     const x = L + i * slot + (slot - bw) / 2;
-    if (state.day === k) s += `<rect class="selected-band" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
+    if (inSpan(k)) s += `<rect class="selected-band" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
     let acc = 0; const segs = [];
     for (const m of stackOrder) {
       const v = series[i].get(m) || 0; if (v <= 0) continue;
@@ -518,7 +545,7 @@ function renderDaily() {
       const h = Math.max(0, y0 - y1 - (j > 0 && !running ? 2 : 0));
       const top = j === segs.length - 1;
       const color = m === -1 ? "var(--other)" : `var(${colorOf[m]})`;
-      const dim = state.day && state.day !== k ? ' opacity="0.35"' : "";
+      const dim = state.day && !inSpan(k) ? ' opacity="0.35"' : "";
       if (h <= 0) return;
       if (top && h > 4) s += `<path d="${roundTop(x, y1, bw, h, running ? 2 : 3)}" fill="${color}"${dim}/>`;
       else s += `<rect x="${x}" y="${y1}" width="${bw}" height="${h}" fill="${color}"${dim}/>`;
@@ -562,10 +589,14 @@ const chartResize = new ResizeObserver(() => {
     const size = (sel) => Math.max(160, Math.floor($(sel).clientWidth)) + "x" + Math.max(110, Math.floor($(sel).clientHeight));
     if (size("#daily") !== drawnAt["#daily"]) renderDaily();
     if (size("#hourly") !== drawnAt["#hourly"]) renderHourly();
+    if (state.modelMode === "trend" && size("#modelTrend") !== drawnAt["#modelTrend"]) renderModelTrend();
+    if (state.projMode === "map" && size("#projMap") !== drawnAt["#projMap"]) renderProjects();
   });
 });
 chartResize.observe($("#daily"));
 chartResize.observe($("#hourly"));
+chartResize.observe($("#modelTrend"));
+chartResize.observe($("#projMap"));
 
 function roundTop(x, y, w, h, r) {
   r = Math.min(r, w / 2, h);
@@ -580,6 +611,10 @@ function niceTicks(max, count) {
 }
 
 function renderModels() {
+  const trend = state.modelMode === "trend";
+  $("#models").hidden = trend; $("#modelTrend").hidden = !trend; $("#trendLegend").hidden = !trend;
+  $("#modelSub").textContent = trend ? (document.querySelector(".card.max #modelTrend") ? "Per day, click a name to filter" : "Per day, hover for names") : "Click to filter";
+  if (trend) return renderModelTrend();
   const agg = new Map();
   for (const r of D.rows) {
     if (!passes(r, { ignoreModel: true })) continue;
@@ -605,9 +640,61 @@ function renderModels() {
 
 const hourName = (h) => h === 0 ? "12a" : h < 12 ? h + "a" : h === 12 ? "12p" : (h - 12) + "p";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// one line per model across the days in range
+function renderModelTrend() {
+  $("#modelSub").textContent = $("#modelTrend").closest(".card").classList.contains("max") ? "Per day, click a name to filter" : "Per day, hover for names";
+  const rs = rangeStart(); const keys = [];
+  let start;
+  if (rs) { const [y, m, d] = rs.split("-").map(Number); start = new Date(y, m - 1, d); }
+  else {
+    let min = null;
+    for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { const k = dayOf(r[2]); if (!min || k < min) min = k; }
+    if (!min) { $("#modelTrend").innerHTML = `<div class="empty">No usage.</div>`; $("#trendLegend").innerHTML = ""; return; }
+    const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) keys.push(dayKey(d));
+  const at = new Map(keys.map((k, i) => [k, i]));
+  const series = new Map(); const used = [];
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreDay: true, ignoreModel: true })) continue;
+    const i = at.get(dayOf(r[2])); if (i === undefined) continue;
+    const key = colorOf[r[0]] === "--other" ? -1 : r[0];
+    if (!series.has(key)) series.set(key, new Array(keys.length).fill(0));
+    series.get(key)[i] += val(r); used.push(r);
+  }
+  const order = topModelsFor(used).filter((m) => colorOf[m] !== "--other");
+  if (series.has(-1)) order.push(-1);
+  $("#trendLegend").innerHTML = legendHtml(topModelsFor(used));
+  const max = Math.max(0, ...[...series.values()].flat());
+  if (max <= 0) { $("#modelTrend").innerHTML = `<div class="empty">No usage.</div>`; return; }
+  const { W, H } = boxOf("#modelTrend"), L = 48, B = 22, T = 8, R = 8, plotW = W - L - R, plotH = H - B - T;
+  const n = keys.length, x = (i) => L + (n === 1 ? plotW / 2 : i / (n - 1) * plotW);
+  const ticks = niceTicks(max, plotH > 300 ? 5 : 3), top = ticks[ticks.length - 1], y = (v) => T + plotH - v / top * plotH;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Usage per model per day">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${fmtVal(t)}</text>`;
+  const every = Math.ceil(n / Math.max(2, Math.floor(plotW / 58)));
+  keys.forEach((k, i) => { if (i % every === 0) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${dayLabel(k)}</text>`; });
+  // draw the biggest model last so it sits on top
+  for (const m of [...order].reverse()) {
+    const c = m === -1 ? "var(--other)" : `var(${colorOf[m]})`;
+    const pts = series.get(m).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const faded = state.model !== null && state.model !== m ? ' stroke-opacity="0.25"' : "";
+    s += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-linejoin="round" stroke-linecap="round"${faded}/>`;
+  }
+  const slot = plotW / Math.max(1, n - 1);
+  keys.forEach((k, i) => { s += `<rect class="hit" data-i="${i}" x="${x(i) - slot / 2}" y="${T}" width="${slot}" height="${plotH}"/>`; });
+  s += `</svg>`;
+  $("#modelTrend").innerHTML = s;
+  $("#modelTrend svg")._tip = (i) => {
+    const rows = order.map((m) => [m === -1 ? "Other models" : D.models[m].name, m === -1 ? "var(--other)" : `var(${colorOf[m]})`, series.get(m)[i]]).filter((r) => r[2] > 0);
+    return `<div class="h">${dayLabel(keys[i])}</div>` + (rows.length ? rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("") : `<div class="r"><span>No usage</span></div>`);
+  };
+}
+
 function renderHourly() {
   const week = state.hourMode === "week";
-  $("#hourTitle").textContent = week ? "Week by hour" : state.day ? "By hour, " + dayLabel(state.day) : "By hour of day";
+  $("#hourTitle").textContent = week ? "Week by hour" : state.day ? "By hour, " + spanLabel() : "By hour of day";
   $("#hourSub").textContent = week ? "Local time, darker is more" : state.day ? "Local time" : "Local time, whole range";
   if (week) return renderHeat();
   const vals = new Array(24).fill(0);
@@ -699,6 +786,7 @@ function renderSessions() {
   if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; return; }
   // the Tool column only helps when both tools are in the list
   const showTool = state.src === "all" && D.lastBySrc[0] > 0 && D.lastBySrc[1] > 0;
+  const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
   const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
   $("#sessions").innerHTML = `<table><thead><tr>
       <th data-sort="title">Session${arrow("title")}</th>${showTool ? "<th>Tool</th>" : ""}<th class="xcol">Project</th><th>Main model</th><th data-sort="start">Started${arrow("start")}</th><th class="xcol" data-sort="last">Last active${arrow("last")}</th>
@@ -709,10 +797,55 @@ function renderSessions() {
       const title = s[3] || baseName(D.projects[s[2]]) + " · " + s[1].slice(0, 8);
       return `<tr data-sess="${si}" aria-selected="${state.sess === si}" title="${esc(D.projects[s[2]])}\n${esc(s[1])}">
         <td class="wrap">${esc(title)}</td>${showTool ? `<td class="muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted">${esc(baseName(D.projects[s[2]]))}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(a.first * 3600)}</td><td class="xcol muted">${dtLabel(a.last * 3600)}</td>
-        <td class="num">${fmtInt(a.reqs)}</td><td class="num">${fmtTok(a.tok)}</td><td class="num">${fmtUsd(a.cost)}</td></tr>`;
+        <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${fmtUsd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > 300 ? `<div class="note">Showing the top 300 of ${fmtInt(agg.size)} sessions.</div>` : ""}`;
 }
+
+// squarified treemap: rectangles close to square, biggest first
+function squarify(vals, x, y, w, h) {
+  const out = [], total = vals.reduce((a, b) => a + b, 0);
+  if (!total) return out;
+  const areas = vals.map((v) => v * (w * h) / total);
+  let i = 0;
+  while (i < areas.length) {
+    const short = Math.min(w, h);
+    const worst = (r) => { const s = r.reduce((a, b) => a + b, 0), mx = Math.max(...r), mn = Math.min(...r); return Math.max(short * short * mx / (s * s), (s * s) / (short * short * mn)); };
+    const row = [areas[i]]; let j = i + 1;
+    while (j < areas.length && worst([...row, areas[j]]) <= worst(row)) row.push(areas[j++]);
+    const sum = row.reduce((a, b) => a + b, 0);
+    if (w >= h) { const cw = sum / h; let yy = y; for (const a of row) { out.push([x, yy, cw, a / cw]); yy += a / cw; } x += cw; w -= cw; }
+    else { const ch = sum / w; let xx = x; for (const a of row) { out.push([xx, y, a / ch, ch]); xx += a / ch; } y += ch; h -= ch; }
+    i = j;
+  }
+  return out;
+}
+function renderProjMap(list) {
+  const el = $("#projMap");
+  const { W, H } = boxOf("#projMap");
+  const v = (a) => state.metric === "cost" ? a.cost : a.tok;
+  let items = list.filter(([, a]) => v(a) > 0).map(([p, a]) => ({ p, a, v: v(a) }));
+  if (!items.length) { el.innerHTML = `<div class="empty">No projects.</div>`; return; }
+  const total = items.reduce((s, it) => s + it.v, 0);
+  // fold the long tail into one box so every box can hold a label
+  const keep = items.filter((it, i) => i < 24 && it.v / total > 0.004);
+  const rest = items.slice(keep.length);
+  if (rest.length) keep.push({ p: null, v: rest.reduce((s, it) => s + it.v, 0), n: rest.length });
+  keep.sort((x, y) => y.v - x.v);
+  const rects = squarify(keep.map((it) => it.v), 0, 0, W, H);
+  const top = Math.max(...keep.filter((it) => it.p !== null).map((it) => it.v));
+  el.innerHTML = rects.map(([x, y, w, h], i) => {
+    const it = keep[i], share = it.v / total * 100;
+    const strength = it.p === null ? 12 : Math.round(22 + 58 * Math.sqrt(it.v / top));
+    const name = it.p === null ? `${it.n} more` : baseName(D.projects[it.p]);
+    const big = w > 70 && h > 38, small = w > 34 && h > 18;
+    const tip = it.p === null ? `${it.n} smaller projects` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${fmtUsd(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
+    return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}"` : ""} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
+  }).join("");
+}
+
+// a bar behind a table number, sized against the biggest in the list
+const dbar = (v, max) => ` style="--w:${Math.max(0, Math.min(100, v / max * 100)).toFixed(1)}%"`;
 
 function renderProjects() {
   const agg = new Map();
@@ -723,10 +856,14 @@ function renderProjects() {
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.sess.add(r[1]);
   }
   const list = [...agg.entries()].sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok).slice(0, 200);
+  const pmax = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
+  const map = state.projMode === "map";
+  $("#projects").hidden = map; $("#projMap").hidden = !map;
+  if (map) return renderProjMap(list);
   if (!list.length) { $("#projects").innerHTML = `<div class="empty">No projects.</div>`; return; }
   $("#projects").innerHTML = `<table><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">${state.metric === "cost" ? "API cost" : "Tokens"}</th></tr></thead><tbody>
     ${list.map(([p, a]) => `<tr data-proj="${p}" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}
-${fmtTok(a.tok)} tokens, ${fmtUsd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num">${state.metric === "cost" ? fmtUsd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
+${fmtTok(a.tok)} tokens, ${fmtUsd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? fmtUsd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
   </tbody></table>`;
 }
 
@@ -771,6 +908,8 @@ document.addEventListener("click", (e) => {
     if (g === "metricSeg") state.metric = seg.dataset.v;
     if (g === "dailyMode") { state.dailyMode = seg.dataset.v; return renderDaily(); }
     if (g === "hourMode") { state.hourMode = seg.dataset.v; return renderHourly(); }
+    if (g === "modelMode") { state.modelMode = seg.dataset.v; return renderModels(); }
+    if (g === "projMode") { state.projMode = seg.dataset.v; return renderProjects(); }
     return render();
   }
   const tab = t.closest(".tabs button");
@@ -785,7 +924,7 @@ document.addEventListener("click", (e) => {
   const clear = t.closest("[data-clear]");
   if (clear) { const k = clear.dataset.clear; if (k === "all") Object.assign(state, { day: null, model: null, proj: null, sess: null }); else state[k] = null; return render(); }
   const day = t.closest("[data-day]");
-  if (day) { state.day = state.day === day.dataset.day ? null : day.dataset.day; return render(); }
+  if (day) { const k = day.dataset.day; state.day = state.day && state.day[0] === k && state.day[1] === k ? null : [k, k]; return render(); }
   const model = t.closest("[data-model]");
   if (model) { const m = +model.dataset.model; state.model = state.model === m ? null : m; return render(); }
   const sort = t.closest("[data-sort]");
@@ -837,6 +976,34 @@ window.tkFullscreen = function (on) {
 };
 window.tkFullscreen(false);
 $("#fs").addEventListener("click", () => setFullscreen(!isFullscreen));
+
+// drag across the daily chart to filter to a span of days
+let drag = null;
+document.addEventListener("mousedown", (e) => {
+  const hit = e.button === 0 && e.target.closest && e.target.closest("#daily .hit");
+  if (!hit) return;
+  e.preventDefault();
+  drag = { from: hit, to: hit, band: null };
+});
+document.addEventListener("mousemove", (e) => {
+  if (!drag) return;
+  const hit = e.target.closest && e.target.closest("#daily .hit");
+  if (!hit || hit === drag.to) return;
+  drag.to = hit;
+  const svg = hit.ownerSVGElement;
+  if (!drag.band) { drag.band = document.createElementNS("http://www.w3.org/2000/svg", "rect"); drag.band.setAttribute("class", "drag-band"); svg.insertBefore(drag.band, svg.firstChild); }
+  const a = drag.from, b = hit, ax = +a.getAttribute("x"), bx = +b.getAttribute("x"), w = +a.getAttribute("width");
+  drag.band.setAttribute("x", Math.min(ax, bx)); drag.band.setAttribute("width", Math.abs(bx - ax) + w);
+  drag.band.setAttribute("y", a.getAttribute("y")); drag.band.setAttribute("height", a.getAttribute("height"));
+});
+document.addEventListener("mouseup", () => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (d.from === d.to) return; // a plain click: the click handler toggles that day
+  const ks = [d.from.dataset.day, d.to.dataset.day].sort();
+  state.day = ks;
+  render();
+});
 
 function requestScan() {
   if (!window.ipc) return;

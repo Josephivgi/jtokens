@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod prices;
+mod update;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -434,6 +435,22 @@ fn esc(s: &str, out: &mut String) {
     out.push('"');
 }
 
+/// Like esc, but keeps line breaks (release notes).
+fn esc_multiline(s: &str, out: &mut String) {
+    let mut first = true;
+    let mut tmp = String::new();
+    for line in s.lines() {
+        if !first {
+            tmp.push('\u{E000}');
+        }
+        first = false;
+        tmp.push_str(line);
+    }
+    let mut j = String::new();
+    esc(&tmp, &mut j);
+    out.push_str(&j.replace('\u{E000}', "\\n"));
+}
+
 fn codex_titles() -> HashMap<String, String> {
     let mut m = HashMap::new();
     let p = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".codex")).join("session_index.jsonl");
@@ -681,6 +698,8 @@ const HELP: &str = "JTokens: Claude Code and Codex token usage and API cost
   jtokens --export out.html              write the dashboard with data baked in
   jtokens --json data.json               write the raw data the UI uses
   jtokens --serve                        scan on each `scan` line from stdin, answer JSON lines
+  jtokens --check-update                 say whether a newer release is on GitHub
+  jtokens --update [--no-launch]         install the newest release, then start it
   jtokens --version                      print the version";
 
 /// Shows an error box. The release build has no console and aborts on panic,
@@ -711,6 +730,14 @@ fn main() {
     if flag("--version") || flag("-V") {
         attach_console();
         println!("jtokens {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    if flag("--check-update") || flag("--update") {
+        attach_console();
+        if let Err(e) = update::cli(flag("--update"), !flag("--no-launch")) {
+            println!("{e}");
+            std::process::exit(1);
+        }
         return;
     }
     if flag("--help") || flag("-h") {
@@ -767,6 +794,8 @@ fn main() {
 enum UserEvent {
     Data(String),
     Rendered(String),
+    Update(String),
+    Exit,
 }
 
 fn run_gui(smoke: bool, report: Option<String>) {
@@ -789,6 +818,15 @@ fn run_gui(smoke: bool, report: Option<String>) {
         Ok(w) => w,
         Err(e) => return fail(smoke, &report, &format!("Could not open the window: {e}")),
     };
+
+    // Updates: only the real window checks, never the hidden smoke test.
+    let update_proxy = proxy.clone();
+    let updater = update::Updater::new(Arc::new(move |s: &update::State| {
+        let _ = update_proxy.send_event(UserEvent::Update(s.json()));
+    }));
+    if !smoke {
+        update::cleanup_after_update();
+    }
 
     let scanner = Arc::new(Mutex::new(Scanner::default()));
     let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -830,6 +868,20 @@ fn run_gui(smoke: bool, report: Option<String>) {
                         let _ = writeln!(f, "{msg}");
                     }
                 }
+            } else if body == "update:check" {
+                updater.check();
+            } else if body == "update:install" {
+                let p = ipc_proxy.clone();
+                updater.install(move || {
+                    let _ = p.send_event(UserEvent::Exit);
+                });
+            } else if body == "update:ready" {
+                // The page is loaded: start checking (not in the hidden smoke test).
+                if !smoke && matches!(updater.state(), update::State::Idle) {
+                    updater.start_timer();
+                } else {
+                    let _ = ipc_proxy.send_event(UserEvent::Update(updater.state().json()));
+                }
             } else if let Some(url) = body.strip_prefix("open:") {
                 if url.starts_with("https://") {
                     open_url(url);
@@ -862,6 +914,10 @@ Details: {e}"
                 js.push_str(");");
                 let _ = webview.evaluate_script(&js);
             }
+            Event::UserEvent(UserEvent::Update(json)) => {
+                let _ = webview.evaluate_script(&format!("window.tkUpdate && window.tkUpdate({json});"));
+            }
+            Event::UserEvent(UserEvent::Exit) => *cf = ControlFlow::Exit,
             Event::UserEvent(UserEvent::Rendered(info)) => {
                 if smoke {
                     if let Some(p) = &report {

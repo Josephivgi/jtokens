@@ -6,6 +6,7 @@ It reads the logs already on your computer. Nothing is sent anywhere.
 ## Download
 
 Get `JTokens.exe` from the [latest release](https://github.com/Josephivgi/jtokens/releases/latest) and run it. No installer.
+It updates itself from GitHub Releases: it checks when it opens and every 30 minutes, and installs only when you press Install and restart.
 `SHA256SUMS.txt` in each release has the file hashes.
 
 Needs Windows 10 or 11 (64-bit) and the Microsoft Edge WebView2 Runtime (Windows 11 has it).
@@ -43,6 +44,8 @@ Needs the Rust MSVC toolchain and Visual Studio Build Tools (for `ml64.exe`).
     jtokens --smoke-gui --report r.json     boot the real window hidden, scan, render, report, exit
     jtokens --export out.html               write the dashboard with data baked in
     jtokens --json data.json                write the raw data the UI uses
+    jtokens --check-update                  say whether a newer release is on GitHub
+    jtokens --update [--no-launch]          install the newest release (checked by SHA-256), then start it
     jtokens --version                       print the version
 
 `python -I tools/verify.py data.json` checks the assembly scanner against a full JSON parse of every log line.

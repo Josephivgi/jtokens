@@ -114,6 +114,17 @@ tbody tr[aria-selected="true"] td { background: var(--surface-2); }
 a { color: var(--accent); }
 .empty { color: var(--text-muted); padding: 40px 0; text-align: center; }
 .problem { color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface-1); margin-bottom: 12px; }
+.update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--accent); border-radius: var(--radius); padding: 10px 12px; background: var(--surface-1); margin-bottom: 12px; }
+.update.is-problem { border-color: var(--border); }
+.update .msg { flex: 1; min-width: 200px; }
+.update .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.update .btn-primary:hover { filter: brightness(1.08); background: var(--accent); }
+.update .bar { flex-basis: 100%; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.update .bar b { display: block; height: 100%; background: var(--accent); width: 0; }
+.update pre { flex-basis: 100%; margin: 0; white-space: pre-wrap; font: 12px/1.5 var(--font); color: var(--text-secondary); max-height: 220px; overflow: auto; border-top: 1px solid var(--grid); padding-top: 8px; }
+.appver { color: var(--text-muted); font-size: 12px; margin-top: 24px; display: flex; gap: 8px; align-items: center; }
+.appver button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 12px; }
+.appver button:disabled { color: var(--text-muted); cursor: default; }
 @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, 1fr); } .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -143,6 +154,8 @@ a { color: var(--accent); }
     <button class="btn" id="refresh">Refresh</button>
     <button class="btn" id="theme" title="Switch light or dark">Light</button>
   </header>
+
+  <div class="update" id="update" role="status" hidden></div>
 
   <div class="tabs" role="tablist">
     <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
@@ -208,6 +221,7 @@ a { color: var(--accent); }
       </div>
     </div>
   </section>
+  <p class="appver" id="appver" hidden></p>
 </div>
 <div id="tip" role="tooltip"></div>
 <!--DATA-->
@@ -642,8 +656,42 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; $("#theme")
 applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
 $("#theme").addEventListener("click", () => { const t = document.documentElement.dataset.theme === "light" ? "dark" : "light"; applyTheme(t); if (window.ipc) window.ipc.postMessage("theme:" + t); });
 
+// ---------- updates (the app checks GitHub Releases; the page shows the result)
+let upd = null;
+window.tkUpdate = function (u) {
+  upd = u;
+  const box = $("#update"), ver = $("#appver");
+  const show = (html, problem) => { box.innerHTML = html; box.hidden = false; box.classList.toggle("is-problem", !!problem); };
+  if (u.s === "available") {
+    show(`<span class="msg"><strong>JTokens ${esc(u.version)} is available.</strong> You have ${esc(u.current)}.</span>
+      ${u.notes ? `<button class="btn" type="button" data-upd="notes" aria-expanded="false">What's new</button>` : `<a class="btn" href="${esc(u.page)}" data-open="${esc(u.page)}">What's new</a>`}
+      <button class="btn btn-primary" type="button" data-upd="install">Install and restart</button>
+      ${u.notes ? `<pre hidden>${esc(u.notes.replace(/\*\*/g, "").replace(/^- /gm, "• "))}</pre>` : ""}`);
+  } else if (u.s === "downloading") {
+    const pct = u.total ? Math.floor(100 * u.done / u.total) : 0;
+    show(`<span class="msg">Downloading the update: ${pct}%</span><div class="bar"><b style="width:${pct}%"></b></div>`);
+  } else if (u.s === "restarting") {
+    show(`<span class="msg">Update installed. JTokens is restarting.</span>`);
+  } else if (u.s === "failed") {
+    show(`<span class="msg">Could not update: ${esc(u.msg)}</span><button class="btn" type="button" data-upd="check">Try again</button>`, true);
+  } else {
+    box.hidden = true; box.innerHTML = "";
+  }
+  const status = { checking: "checking for updates", uptodate: "up to date", none: "up to date", available: "update available", downloading: "updating", restarting: "restarting", failed: "update check failed" }[u.s] || "";
+  ver.innerHTML = `JTokens ${esc(u.current)}${status ? " · " + status : ""} <button type="button" data-upd="check"${u.s === "checking" || u.s === "downloading" || u.s === "restarting" ? " disabled" : ""}>Check for updates</button>`;
+  ver.hidden = false;
+};
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-upd]");
+  if (!b || !window.ipc) return;
+  const k = b.dataset.upd;
+  if (k === "notes") { const pre = $("#update pre"); pre.hidden = !pre.hidden; b.setAttribute("aria-expanded", String(!pre.hidden)); return; }
+  if (k === "install") { b.disabled = true; window.ipc.postMessage("update:install"); }
+  if (k === "check") { b.disabled = true; window.ipc.postMessage("update:check"); }
+});
+
 if (window.__TK_STATIC) { $("#refresh").disabled = true; $("#live").disabled = true; window.tkData(window.__TK_STATIC); }
-else requestScan();
+else { requestScan(); if (window.ipc) window.ipc.postMessage("update:ready"); }
 </script>
 </body>
 </html>

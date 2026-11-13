@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.0
+
+**New**
+
+- JTokens now updates itself. When a new version is out, a bar at the top says so. Press Install and restart and it downloads the update, checks it against the release checksum, and restarts into the new version. What's new shows the release notes first.
+- It checks when it opens and every 30 minutes. The bottom of the page shows your version and has a Check for updates button.
+
 ## v1.0.0
 
 First public release.

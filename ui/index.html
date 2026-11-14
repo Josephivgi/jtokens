@@ -63,9 +63,9 @@ header h1 { font-size: 15px; font-weight: 650; margin: 0 6px 0 0; letter-spacing
 label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24px; color: var(--text-secondary); cursor: pointer; }
 .spacer { flex: 1; }
 .dash { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
-.bar2 { display: flex; align-items: center; gap: 12px; min-height: 30px; flex: none; }
+.bar2 { display: flex; align-items: center; gap: 12px; min-height: 34px; flex: none; }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 0; }
-.problems { color: var(--text-secondary); font-size: 12px; text-align: right; max-width: 55%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.problems { color: var(--text-secondary); font-size: 12px; line-height: 16px; text-align: right; max-width: 55%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 10px; color: var(--text-primary); font-size: 12px; max-width: 340px; min-width: 0; }
 .chip .ct { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .chip button { border: 0; background: none; cursor: pointer; color: var(--text-muted); min-width: 24px; min-height: 24px; padding: 4px 6px; margin: -4px -4px -4px 0; font-size: 14px; line-height: 1; border-radius: 4px; }
@@ -96,6 +96,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend span[data-model] { cursor: pointer; padding: 4px 0; margin: -4px 0; }
 .legend span.off i { opacity: .35; }
+.legend em { font-style: normal; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tm { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--accent) var(--k), var(--surface-1)); padding: 4px 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tm:hover { outline: 1px solid var(--text-secondary); }
 .tm.sel { outline: 2px solid var(--text-primary); }
@@ -326,7 +327,7 @@ let scanFailed = false, manualScan = false, scanning = false, queuedManual = fal
 let pricesFor = null, focusOverride = null, lastMetric = "cost";
 
 // ---------- formatting
-const fmtUsd = (v) => v < 0 ? "−" + fmtUsd(-v) : v >= 999.5 ? "$" + Math.round(v).toLocaleString("en-US") : v >= 99.995 ? "$" + v.toFixed(0) : v >= 0.9995 ? "$" + v.toFixed(2) : v >= 0.0005 ? "$" + v.toFixed(3) : v > 0 ? "<$0.001" : "$0";
+const fmtUsd = (v) => v < 0 ? "−" + fmtUsd(-v) : v >= 999.5 ? "$" + Math.round(v).toLocaleString("en-US") : v >= 99.995 ? "$" + v.toFixed(0) : v >= 0.0995 ? "$" + v.toFixed(2) : v >= 0.0005 ? "$" + v.toFixed(3) : v > 0 ? "<$0.001" : "$0";
 const fmtTok = (v) => v >= 999.95e6 ? (v / 1e9).toFixed(2) + "B" : v >= 999.95e3 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : String(Math.round(v));
 const fmtInt = (v) => v.toLocaleString("en-US");
 const fmtVal = (v) => state.metric === "cost" ? fmtUsd(v) : fmtTok(v);
@@ -400,9 +401,9 @@ window.tkData = function (data) {
     focusOverride = i < 0 ? null : `#${feHost.id} [data-${feId[0]}="${i}"]`;
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
-  const pn = D.projects.map((x) => baseName(x)), pc = new Map(); for (const n of pn) pc.set(n, (pc.get(n) || 0) + 1);
+  const pn = D.projects.map((x) => baseName(x));
   D.projNames = pn.slice();
-  for (let depth = 2; depth <= 6; depth++) {
+  for (let depth = 2; depth <= 64; depth++) {
     const cnt = new Map(); for (const n of D.projNames) cnt.set(n, (cnt.get(n) || 0) + 1);
     let again = false;
     D.projNames = D.projNames.map((n, i) => { if (cnt.get(n) < 2) return n; again = true; return D.projects[i].split(/[\\/]/).filter(Boolean).slice(-depth).join("/"); });
@@ -491,13 +492,14 @@ const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):n
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
-  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (pricesFor !== D) { renderPrices(); pricesFor = D; } return; } // drawn when Overview comes back
+  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (pricesFor !== D) { try { renderPrices(); } catch (err) { $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; } return; } // drawn when Overview comes back
   overviewDirty = false;
   const fk = focusOverride || focusKey(document.activeElement); focusOverride = null;
   if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; } // Sessions follow Measure
   RS = rangeStart(); THIS_YEAR = new Date().getFullYear(); renderedHour = Math.floor(Date.now() / 3600000);
   // a day picked before midnight can fall out of the range; drop or trim it
   if (state.day && RS) { if (state.day[1] < RS) state.day = null; else if (state.day[0] < RS) state.day = [RS, state.day[1]]; }
+  if (state.day && FD()) { if (state.day[1] < FD()) state.day = null; else if (state.day[0] < FD()) state.day = [FD(), state.day[1]]; } // old logs can leave disk between scans
   const hadTip = tip.style.display === "block" && !tipFromFocus;
   tipKey = null; tip.style.display = "none";
   // keep each list's scroll position across redraws (Live refreshes every 10 s)
@@ -511,7 +513,7 @@ function render() {
       if (sel) $(typeof sel === "function" ? sel() : sel).innerHTML = `<div class="empty">Could not draw this ${sel === "#kpis" ? "summary" : sel === "#filters" ? "filter line" : "card"}. Press Refresh to try again.</div>`;
     }
   }
-  if (pricesFor !== D) { renderPrices(); pricesFor = D; }
+  if (pricesFor !== D) { try { renderPrices(); } catch (err) { if (window.ipc) window.ipc.postMessage("log:error renderPrices: " + (err && err.message)); $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; }
   ignoreScrollUntil = performance.now() + 150; // restoring scroll fires scroll events; they must not hide the tooltip
   for (const [el, t] of scrolls) {
     const box = el, k = JSON.stringify([...base.map((v, i) => i === own[box.id] ? null : v), box.id === "models" ? state.modelMode : box.id === "projects" ? state.projMode : 0]);
@@ -553,7 +555,7 @@ function renderKpis() {
     if (!D.models[r[0]].priced) unpricedTok += t;
     const pr = priceOf[r[0]];
     // reads cost less than input; writes cost more (Claude), so count both at base list price
-    if (pr) { saved += r[5] * (pr.in - pr.cr) / 1e6 - r[6] * ((pr.w5 || pr.in) - pr.in) / 1e6; }
+    if (pr) { const d = r[5] * (pr.in - (pr.cr ?? pr.in)) / 1e6 - r[6] * ((pr.w5 ?? pr.in) - pr.in) / 1e6; if (Number.isFinite(d)) saved += d; } // a missing rate counts as no saving, never NaN
   }
   // today is only partly over: leave it out of the per-day number when there are other days
   const todayKey = dayKey(new Date());
@@ -665,7 +667,7 @@ function legendHtml(models) {
   for (const m of models) {
     const c = colorOf[m];
     if (c === "--other" && m !== state.model) { if (!seen.has("other")) { seen.add("other"); items.push(`<span><i style="background:var(--other)"></i>Other models</span>`); } continue; }
-    items.push(`<span data-model="${m}" tabindex="-1" role="button" aria-pressed="${state.model === m}" title="${esc(D.models[m].name)}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:${c === "--other" ? "var(--text-primary)" : `var(${c})`}"></i>${esc(D.models[m].name)}</span>`);
+    items.push(`<span data-model="${m}" tabindex="-1" role="button" aria-pressed="${state.model === m}" title="${esc(D.models[m].name)}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:${c === "--other" ? "var(--text-primary)" : `var(${c})`}"></i><em>${esc(D.models[m].name)}</em></span>`);
   }
   return items.join("");
 }
@@ -752,7 +754,7 @@ function renderDaily() {
     if (!running && totals[i] > 0 && slot >= Math.max(34, 8 + 6.4 * fmtVal(totals[i]).length)) s += `<text x="${L + i * slot + slot / 2}" y="${y(totals[i]) - 5}" text-anchor="middle" class="vl">${fmtVal(totals[i])}</text>`;
     const pick = n > 1 && totals[i] > 0;
     const a11y = ` tabindex="-1" role="${pick ? "button" : "img"}"${pick ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${tipVal(tots[i])}${running || b.to === todayK ? " so far" : ""}${segs.length > 1 ? ". " + esc(segs.slice().sort((p, q) => q[2] - p[2]).map(([m, , v]) => (m === -1 ? "Other models" : D.models[m].name) + " " + tipVal(v)).join(", ")) : ""}"`;
-    s += `<rect class="hit"${pick ? ` data-day="${b.from}" data-to="${b.to}"` : ""} data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
+    s += `<rect class="hit"${pick ? ` data-day="${b.from}" data-to="${b.to}"` : n > 1 ? ` data-idle="${b.from}" data-idle-to="${b.to}"` : ""} data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
   let avg = 0;
   if (running) {
@@ -905,7 +907,7 @@ function renderModelTrend() {
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Usage per model ${hourly ? "per hour" : "per day"}. Arrow keys move between ${hourly ? "hours" : "days"}.">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   const every = Math.ceil(n / Math.max(2, Math.floor(plotW / (hourly ? 34 : Math.max(58, 14 + 6.6 * Math.max(...slots.map((k) => dayLabel(k).length)))))));
-  const lastP = Math.floor((n - 1) / every) * every, gapX = n > 1 ? (x(n - 1) - x(lastP)) : 0, lw2 = hourly ? 34 : 58;
+  const lastP = Math.floor((n - 1) / every) * every, gapX = n > 1 ? (x(n - 1) - x(lastP)) : 0, lw2 = 6.4 * (label(n - 1).length + label(lastP).length / 2) + 6; // last label is right-aligned, the one before is centred
   slots.forEach((k, i) => { if ((i % every === 0 && !(i === lastP && lastP !== n - 1 && gapX < lw2)) || i === n - 1) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="${n > 1 && i === n - 1 ? "end" : "middle"}">${label(i)}</text>`; });
   // the picked days, shaded like on the daily chart
   if (!hourly && state.day) slots.forEach((k, i) => { if (inSpan(k)) { const hw = plotW / Math.max(1, n - 1) / 2, x0 = n === 1 ? L : Math.max(L, x(i) - hw), x1 = n === 1 ? L + plotW : Math.min(L + plotW, x(i) + hw); s += `<rect class="selected-band" x="${x0}" y="${T}" width="${Math.max(2, x1 - x0)}" height="${plotH}"/>`; } });
@@ -960,14 +962,15 @@ function renderHourly() {
   vals.forEach((v, h) => {
     const x = L + h * slot + (slot - bw) / 2, hh = y(0) - y(v);
     if (onlyToday && h > nowH) { if (h % every === 0) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`; return; } // not yet
-    if (hh > 0) s += hh > 4 ? `<path class="bar" d="${roundTop(x, y(v), bw, hh, 3)}" fill="var(--accent)"/>` : `<rect class="bar" x="${x}" y="${y(v)}" width="${bw}" height="${hh}" fill="var(--accent)"/>`;
+    const part = onlyToday && h === nowH ? ' fill-opacity="0.6"' : ""; // this hour is not over
+    if (hh > 0) s += hh > 4 ? `<path class="bar" d="${roundTop(x, y(v), bw, hh, 3)}" fill="var(--accent)"${part}/>` : `<rect class="bar" x="${x}" y="${y(v)}" width="${bw}" height="${hh}" fill="var(--accent)"${part}/>`;
     if (h % every === 0) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`;
     s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59: ${tipVal(v)}${onlyToday && h === nowH ? " so far" : ""}"/>`;
   });
   s += `</svg>`;
   $("#hourly").innerHTML = s;
   rove("#hourly", ".hit");
-  $("#hourly svg")._tip = (h) => `<div class="h">${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${tipVal(vals[h])}</span></div>`;
+  $("#hourly svg")._tip = (h) => `<div class="h">${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${tipVal(vals[h])}${onlyToday && h === nowH ? " so far" : ""}</span></div>`;
 }
 
 // weekday x hour grid: when in the week the usage happens
@@ -1038,8 +1041,8 @@ function renderSessions() {
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.reqs += r[8];
     const mm = a.models.get(r[0]) || [0, 0]; mm[0] += r[7]; mm[1] += r[3] + r[4] + r[5] + r[6]; a.models.set(r[0], mm);
   }
-  const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => D.sFirst[a[0]], last: (a) => D.sLast[a[0]], title: (a) => sessTitle(a[0]).toLowerCase() }[state.sort] || ((a) => a[1].cost);
-  const cmp = (p, q) => (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) * state.sortDir;
+  const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => D.sFirst[a[0]], last: (a) => D.sLast[a[0]], title: (a) => sessTitle(a[0]) }[state.sort] || ((a) => a[1].cost);
+  const cmp = (p, q) => (typeof p[1] === "string" ? TITLE_SORT.compare(p[1], q[1]) : p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) * state.sortDir;
   const ranked = [...agg.entries()].map((a) => [a, key(a)]).sort(cmp), top = ranked.slice(0, state.sessCap);
   // keep the selected session visible even when it is outside the top 300, in its sorted place
   if (state.sess !== null && agg.has(state.sess) && !top.some((p) => p[0][0] === state.sess)) { top.push(ranked.find((p) => p[0][0] === state.sess)); top.sort(cmp); }
@@ -1298,8 +1301,8 @@ document.addEventListener("click", (e) => {
   const proj = t.closest("[data-proj]");
   if (proj) { const p = +proj.dataset.proj, where = proj.closest("[id]").id; state.proj = state.proj === p ? null : p; if (state.sess !== null && state.proj !== null && D.sessions[state.sess][2] !== state.proj) state.sess = null; render(); return refocus(e, `#${where} [data-proj="${p}"]`); }
 });
-// a click from the keyboard (detail 0) puts focus back on the same item after the redraw
-function refocus(e, sel) { if (e.detail === 0) { const el = document.querySelector(sel); if (el) el.focus(); } }
+// after the redraw, focus goes back on the same item (mouse or keyboard), so Tab carries on from there
+function refocus(e, sel) { const el = document.querySelector(sel); if (el) el.focus({ preventScroll: e.detail !== 0 }); }
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".hbar, [data-day], [data-sess], [data-proj], [data-model], [data-sort], [data-more]")) {
     e.preventDefault(); swallowClick = false; e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); return;
@@ -1419,7 +1422,7 @@ document.addEventListener("mousedown", (e) => {
 document.addEventListener("mousemove", (e) => {
   if (!drag) return;
   if (e.buttons === 0) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; if (p) render(); return; } // released outside the window
-  const hit = e.target.closest && e.target.closest("#daily .hit[data-day]");
+  const hit = e.target.closest && e.target.closest("#daily .hit[data-day], #daily .hit[data-idle]");
   if (!hit || hit === drag.to) return;
   drag.to = hit;
   const svg = hit.ownerSVGElement;
@@ -1437,7 +1440,7 @@ document.addEventListener("mouseup", () => {
     state.day = state.day && state.day[0] === k && state.day[1] === k2 ? null : [k, k2];
     swallowClick = true; setTimeout(() => { swallowClick = false; }, 0); render(); return;
   }
-  const ks = [d.from.dataset.day, d.from.dataset.to, d.to.dataset.day, d.to.dataset.to].sort();
+  const ks = [d.from.dataset.day, d.from.dataset.to, d.to.dataset.day || d.to.dataset.idle, d.to.dataset.to || d.to.dataset.idleTo].sort();
   state.day = [ks[0], ks[3]];
   render();
 });
@@ -1445,7 +1448,6 @@ window.addEventListener("blur", () => { swallowClick = false; if (drag) { const 
 
 function requestScan(manual) {
   if (!window.ipc) return;
-  if (scanning && manual === true && Date.now() - scanStartedAt > 60000) scanning = false; // stuck for a minute: let Refresh try again
   if (scanning) { if (manual === true && !manualScan) { queuedManual = true; $("#refresh").setAttribute("aria-disabled", "true"); $("#scaninfo").textContent = "Scanning…"; } return; }
   scanning = true; scanStartedAt = Date.now();
   if (manual === true) $("#refresh").setAttribute("aria-disabled", "true"); // aria-disabled keeps keyboard focus on it
@@ -1454,8 +1456,10 @@ function requestScan(manual) {
   window.ipc.postMessage("scan");
   const started = ++scanSeq;
   if (manual === true || !D) setTimeout(() => { if (scanning && scanSeq === started) $("#scaninfo").textContent = "Still scanning. Large or slow log folders can take a while."; }, 30000);
+  setTimeout(() => { if (scanning && scanSeq === started) { $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Scan still running after a minute. If it never finishes, restart JTokens."; } }, 60000);
 }
 let scanSeq = 0, scanStartedAt = 0;
+const TITLE_SORT = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 $("#refresh").addEventListener("click", () => requestScan(true));
 // Live skips ticks while the window is minimized and catches up when it comes back
 document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked) requestScan(); });

@@ -796,6 +796,7 @@ enum UserEvent {
     Rendered(String),
     Update(String),
     Fullscreen(bool),
+    ScanFailed,
     Exit,
 }
 
@@ -850,13 +851,17 @@ fn run_gui(smoke: bool, report: Option<String>) {
                 let p = ipc_proxy.clone();
                 let busy = busy.clone();
                 std::thread::spawn(move || {
-                    let json = {
-                        let mut g = sc.lock().unwrap();
+                    // a panic in one scan must not leave Refresh and Live stuck
+                    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let mut g = sc.lock().unwrap_or_else(|e| e.into_inner());
                         let (files, st) = g.scan();
                         build_json(&files, &st).json
-                    };
+                    }));
                     busy.store(false, Ordering::SeqCst);
-                    let _ = p.send_event(UserEvent::Data(json));
+                    let _ = p.send_event(match res {
+                        Ok(json) => UserEvent::Data(json),
+                        Err(_) => UserEvent::ScanFailed,
+                    });
                 });
             } else if let Some(rest) = body.strip_prefix("rendered:") {
                 let _ = ipc_proxy.send_event(UserEvent::Rendered(rest.to_string()));
@@ -924,6 +929,9 @@ Details: {e}"
             Event::UserEvent(UserEvent::Fullscreen(on)) => {
                 window.set_fullscreen(if on { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
                 let _ = webview.evaluate_script(&format!("window.tkFullscreen && window.tkFullscreen({on});"));
+            }
+            Event::UserEvent(UserEvent::ScanFailed) => {
+                let _ = webview.evaluate_script("window.tkScanError && window.tkScanError();");
             }
             Event::UserEvent(UserEvent::Rendered(info)) => {
                 if smoke {

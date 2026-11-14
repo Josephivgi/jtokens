@@ -19,7 +19,7 @@
   --accent-text: #6aa6ef;
   --focus: #86b6ef;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
-  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --s5: #d55181; --s6: #a8743f; --s7: #9085e9; --s8: #e66767;
   --other: #6f6e69;
   --t-input: #3987e5; --t-output: #d95926; --t-read: #199e70; --t-write: #c98500;
   --radius: 8px;
@@ -40,7 +40,7 @@
   --accent-text: #1c5cab; /* accent as text: 4.5:1 on light surfaces */
   --focus: #1c5cab;
   --s1: #2a78d6; --s2: #eb6834; --s3: #13875e; --s4: #b07800;
-  --s5: #c7417a; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --s5: #c7417a; --s6: #8a5a2b; --s7: #6250d6; --s8: #e34948;
   --other: #858480;
   --t-input: #2a78d6; --t-output: #eb6834; --t-read: #13875e; --t-write: #b07800;
 }
@@ -95,7 +95,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .legend { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 0 0 4px; color: var(--text-secondary); font-size: 11px; flex: none; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend span[data-model] { cursor: pointer; }
-.legend span.off { opacity: .45; }
+.legend span.off { color: var(--text-secondary); }
+.legend span.off i { opacity: .35; }
 .tm { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--accent) var(--k), var(--surface-1)); padding: 4px 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tm:hover { outline: 1px solid var(--text-secondary); }
 .tm.sel { outline: 2px solid var(--text-primary); }
@@ -268,7 +269,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="body" id="sessions"></div>
       </div>
       <div class="card">
-        <div class="hd"><h2>Projects</h2><span class="sub">Working folder</span><span class="spacer"></span>
+        <div class="hd"><h2>Projects</h2><span class="sub" id="projSub">Working folder</span><span class="spacer"></span>
           <div class="seg mini" id="projMode" role="group" aria-label="Project view"><button data-v="list" aria-pressed="true">List</button><button data-v="map">Map</button></div></div>
         <div class="body" id="projects"></div>
         <div class="chart" id="projMap" hidden></div>
@@ -294,7 +295,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
       </div>
     </div>
   </section>
-  <footer><span id="scaninfo">Scanning…</span><span class="spacer"></span><span class="appver" id="appver" hidden></span></footer>
+  <footer><span id="scaninfo" aria-live="polite">Scanning…</span><span class="spacer"></span><span class="appver" id="appver" hidden></span></footer>
 </div>
 <div id="tip" role="tooltip"></div>
 <!--DATA-->
@@ -332,8 +333,13 @@ const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return (y 
 const dtLabel = (ts) => { if (!ts) return ""; const d = new Date(ts * 1000); return (d.getFullYear() === THIS_YEAR ? FMT_DT : FMT_DT_Y).format(d); };
 // axis labels show only the decimals the tick step needs
 function tickFmt(ticks, v) {
-  if (state.metric !== "cost") return fmtTok(v).replace(/\.0+(?=[KMB]$)/, "");
   const st = ticks[1] - ticks[0];
+  if (state.metric !== "cost") {
+    const top = ticks[ticks.length - 1], [u, sfx] = top >= 1e9 ? [1e9, "B"] : top >= 1e6 ? [1e6, "M"] : top >= 1e3 ? [1e3, "K"] : [1, ""];
+    if (!v) return "0";
+    let d = 0; while (d < 6) { const x = st / u * 10 ** d; if (Math.abs(x - Math.round(x)) < 1e-6 * Math.max(1, x)) break; d++; }
+    return (v / u).toFixed(d) + sfx;
+  }
   let dec = 0; while (dec < 10) { const x = st * 10 ** dec; if (Math.round(x) >= 1 && Math.abs(x - Math.round(x)) < 1e-6 * x) break; dec++; }
   return "$" + v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
@@ -385,7 +391,7 @@ window.tkData = function (data) {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
   const nameCount = new Map(); for (const m of D.models) nameCount.set(m.name, (nameCount.get(m.name) || 0) + 1);
-  for (const m of D.models) if (nameCount.get(m.name) > 1 && m.name !== m.id) m.name += " (" + m.id + ")";
+  for (const m of D.models) if (nameCount.get(m.name) > 1 && m.name !== m.id) { m.name += " (" + m.id + ")"; m.dup = true; }
   // fixed colors: top 8 models by all-time cost (tokens as tie-break) get slots, rest are Other
   const tot = new Map();
   for (const r of D.rows) { const t = tot.get(r[0]) || [0, 0]; t[0] += r[7]; t[1] += r[3] + r[4] + r[5] + r[6]; tot.set(r[0], t); }
@@ -458,11 +464,11 @@ function focusKey(el) {
   }
   return null;
 }
-const hideAxisText = () => document.querySelectorAll("#daily svg text, #hourly svg text, #modelTrend svg text").forEach((t) => t.setAttribute("aria-hidden", "true"));
+const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):not(.callout):not(.avg-l), #hourly svg text:not(.vl), #modelTrend svg text").forEach((t) => t.setAttribute("aria-hidden", "true"));
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
-  if ($("#tab-overview").hidden) { overviewDirty = true; if (pricesFor !== D) { renderPrices(); pricesFor = D; } return; } // drawn when Overview comes back
+  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); overviewDirty = true; if (pricesFor !== D) { renderPrices(); pricesFor = D; } return; } // drawn when Overview comes back
   overviewDirty = false;
   const fk = focusOverride || focusKey(document.activeElement); focusOverride = null;
   if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; } // Sessions follow Measure
@@ -581,7 +587,7 @@ function renderKpis() {
     ["Tokens", fmtTok(tok), delta(tok, prev && prev.tok, fmtTok, "input, output and cache"), trend && trend.tok],
     ["Requests", fmtInt(reqs), delta(reqs, prev && prev.reqs, fmtInt, "model calls"), trend && trend.reqs],
     ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`, trend && trend.sess],
-    ["Cost per active day", fmtUsd(perDay), state.range === 1 ? "one day in range" : delta(perDay, prev && prev.perDay, fmtUsd, fullDays < days.size ? "days with use, today left out" : "days with use only"), null],
+    ["Cost per active day", fmtUsd(perDay), state.range === 1 ? "one day in range" : days.size === 1 && days.has(todayKey) ? "today so far, no full day yet" : prev && prev.cost > 0 && !prev.perDay && !noHistory ? "days with use, today left out" : delta(perDay, prev && prev.perDay, fmtUsd, fullDays < days.size ? "days with use, today left out" : "days with use only"), null],
     [saved < 0 ? "Cache cost" : "Cache saved", fmtUsd(Math.abs(saved)), saved < 0 ? "writes cost more than reads saved" : "est. at list price, after write cost", null, "Reads at the cache rate instead of full input, minus the extra paid to write caches. Base list prices; writes counted as 5-minute writes (1.25x input), so 1-hour writes (2x) would lower it."],
   ];
   $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="${esc(l)}" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v${v.replace(/<[^>]*>/g, "").length > 6 ? " long" : ""}">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
@@ -650,7 +656,7 @@ function renderDaily() {
   const running = state.dailyMode === "total";
   const { W, H } = boxOf("#daily"), B = 22, T = running ? 8 : 18; // room for the tallest bar's value label
   const plotH = H - B - T;
-  const step = (W - 52 - (running ? 8 : 64)) / days.length < 8 ? 7 : 1;
+  const step = (W - 52 - 64) / days.length < 8 ? 7 : 1; // same cutoff in both views, so the button text does not flip
   $("#dailyMode [data-v=day]").textContent = step === 7 ? "Per week" : "Per day";
   $("#dailyHint").textContent = days.length === 1 ? "Today so far" : step === 7 ? "Click a week, or drag across weeks, to filter" : "Click a day, or drag across days, to filter";
   $("#dailyTitle").textContent = (step === 7 ? "Weekly " : "Daily ") + (state.metric === "cost" ? "API cost by model" : "tokens by model");
@@ -688,6 +694,7 @@ function renderDaily() {
   for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   const labelW = Math.max(58, 14 + 6.6 * Math.max(...buckets.map((b) => dayLabel(b.from).length)));
   const labelEvery = Math.ceil(n / Math.max(2, Math.floor(plotW / labelW)));
+  const todayK = dayKey(new Date());
   buckets.forEach((b, i) => {
     const x = L + i * slot + (slot - bw) / 2;
     if (sel(b)) s += `<rect class="selected-band" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
@@ -696,7 +703,8 @@ function renderDaily() {
       const v = series[i].get(m) || 0; if (v <= 0) continue;
       segs.push([m, acc, v]); acc += v;
     }
-    const dim = state.day && !sel(b) ? ' opacity="0.35"' : "";
+    // today is not over: its bar is lighter so a short bar does not read as a drop
+    const dim = state.day && !sel(b) ? ' opacity="0.35"' : !running && n > 1 && b.to === todayK ? ' fill-opacity="0.6"' : "";
     segs.forEach(([m, a, v], j) => {
       const y0 = y(a), y1 = y(a + v);
       const raw = y0 - y1, h = raw <= 0 ? 0 : Math.max(1, raw - (j > 0 && !running && bw >= 6 && raw >= 4 ? 2 : 0));
@@ -708,7 +716,7 @@ function renderDaily() {
     });
     if (i % labelEvery === 0) s += `<text x="${L + i * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${dayLabel(b.from)}</text>`;
     if (!running && totals[i] > 0 && slot >= Math.max(34, 8 + 6.4 * fmtVal(totals[i]).length)) s += `<text x="${L + i * slot + slot / 2}" y="${y(totals[i]) - 5}" text-anchor="middle" class="vl">${fmtVal(totals[i])}</text>`;
-    const a11y = ` tabindex="-1" role="${n > 1 ? "button" : "img"}"${n > 1 ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${fmtVal(tots[i])}${running ? " so far" : ""}"`;
+    const a11y = ` tabindex="-1" role="${n > 1 ? "button" : "img"}"${n > 1 ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${fmtVal(tots[i])}${running || b.to === todayK ? " so far" : ""}"`;
     s += `<rect class="hit"${n > 1 ? ` data-day="${b.from}" data-to="${b.to}"` : ""} data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
   let avg = 0;
@@ -727,7 +735,7 @@ function renderDaily() {
     const m = series[i];
     const rows = stackOrder.filter((k) => (m.get(k) || 0) > 0).map((k) => [k === -1 ? "Other models" : D.models[k].name, colorVar(k), m.get(k)]);
     const part = step === 7 && i === n - 1 && days.length % 7 ? " (partial week)" : "";
-    const head = running ? `${name(buckets[i])}${part}: ${fmtVal(cumTot[i])} so far` : `${name(buckets[i])}${part}: ${fmtVal(totals[i])}`;
+    const head = running ? `${name(buckets[i])}${part}: ${fmtVal(cumTot[i])} so far` : `${name(buckets[i])}${part}: ${fmtVal(totals[i])}${buckets[i].to === dayKey(new Date()) ? " so far" : ""}`;
     const foot = running ? `<div class="r tsep"><span>That ${unit}</span><span>${fmtVal(totals[i])}</span></div>` : `<div class="r tsep"><span>Running total</span><span>${fmtVal(cumTot[i])}</span></div>` + (avg ? `<div class="r"><span>Average per ${unit}, ${step === 7 ? "full weeks" : "idle days incl., today left out"}</span><span>${fmtVal(avg)}</span></div>` : "");
     return `<div class="h">${head}</div>` + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("") + foot;
   };
@@ -800,7 +808,7 @@ function renderModels() {
       <div class="n"><i style="background:${c}"></i><span class="nm">${esc(md.name)}</span>${bothTools ? `<span class="muted">${SRC_NAME[md.src]}</span>` : ""}</div>
       <div class="val">${right}</div>
       <div class="track"><b style="width:${(v / max * 100).toFixed(2)}%;background:${c}"></b></div>
-      <div class="meta">${state.metric === "cost" ? fmtTok(a.tok) + " tokens" : md.priced ? colUsd(a.cost) : "no public price"}, ${fmtInt(a.reqs)} requests${md.name !== md.id ? ", id " + esc(md.id) : ""}</div>
+      <div class="meta">${state.metric === "cost" ? fmtTok(a.tok) + " tokens" : md.priced ? colUsd(a.cost) : "no public price"}, ${fmtInt(a.reqs)} requests${md.dup ? ", id " + esc(md.id) : ""}</div>
     </div>`;
   }).join("");
   rove("#models", ".hbar");
@@ -898,7 +906,7 @@ function renderHourly() {
   const week = state.hourMode === "week";
   $("#hourTitle").textContent = week ? "Week by hour" : "By hour";
   { const b = $("#hourTitle").closest(".card").querySelector("[data-expand]"); if (b && b.dataset.what !== $("#hourTitle").textContent) { b.dataset.what = $("#hourTitle").textContent; b.setAttribute("aria-label", (b.closest(".card").classList.contains("max") ? "Close full screen: " : "Full screen: ") + b.dataset.what); } }
-  $("#hourSub").textContent = state.day ? spanLabel() + ", local time" : week ? "Local time, totals" : "Local time";
+  $("#hourSub").textContent = state.day ? spanLabel() + ", local time" : "Local time, totals";
   $("#hourSub").title = (state.day ? spanLabel() + ", local time" : "Local time, whole range") + (week ? ". Each cell is the total for that weekday and hour; stronger is more." : "");
   if (week) return renderHeat();
   const vals = new Array(24).fill(0);
@@ -1043,9 +1051,12 @@ function renderProjMap(list) {
   const el = $("#projMap");
   const { W, H } = boxOf("#projMap");
   const v = (a) => state.metric === "cost" ? a.cost : a.tok;
-  let items = list.filter(([, a]) => v(a) > 0).map(([p, a]) => ({ p, a, v: v(a) }));
+  let items = list.filter(([p, a]) => v(a) > 0 || p === state.proj).map(([p, a]) => ({ p, a, v: v(a) }));
+  const unpricedN = list.filter(([p, a]) => v(a) <= 0 && p !== state.proj).length;
+  $("#projSub").textContent = unpricedN ? `Working folder, ${unpricedN} with no priced use not shown` : "Working folder";
   if (!items.length) { el.innerHTML = `<div class="empty">${list.length && state.metric === "cost" ? "No priced usage in these projects. Switch to Tokens to see them." : "No projects."}</div>`; return; }
   const total = items.reduce((s, it) => s + it.v, 0);
+  if (!total) { el.innerHTML = `<div class="empty">No priced usage in these projects. Switch to Tokens to see them.</div>`; return; }
   // fold the long tail into one box so boxes can hold a label; the biggest and the selected one always get a box
   const keep = items.filter((it, i) => i === 0 || (i < 24 && it.v / total * W * H >= 28 * 18 * 2) || it.p === state.proj);
   const rest = items.filter((it) => !keep.includes(it));
@@ -1060,8 +1071,8 @@ function renderProjMap(list) {
     const strength = it.p === null ? 12 : Math.round(20 + 40 * Math.sqrt(it.v / top)); // capped so labels keep contrast
     const name = it.p === null ? (w > 60 ? `${it.n} more` : `+${it.n}`) : baseName(D.projects[it.p]);
     const big = w > 60 && h > 34, small = w > 26 && h > 16;
-    const tip = it.p === null ? `${it.n} smaller projects. Click for the full list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${colUsd(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
-    return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="-1" role="button" aria-pressed="${state.proj === it.p}" aria-label="${esc(tip.replace(/\n/g, ". "))}"` : ` data-more tabindex="-1" role="button" aria-label="${it.n} smaller projects: ${fmtVal(it.v)}. Opens the full list."`} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
+    const tip = it.p === null ? `${it.n} smaller projects. Click to show them in the list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${colUsd(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
+    return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="-1" role="button" aria-pressed="${state.proj === it.p}" aria-label="${esc(tip.replace(/\n/g, ". "))}"` : ` data-more tabindex="-1" role="button" aria-label="${it.n} smaller projects: ${fmtVal(it.v)}. Shows them in the list."`} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
   }).join("");
   rove("#projMap", ".tm[data-proj], .tm[data-more]");
 }
@@ -1080,8 +1091,9 @@ function renderProjects() {
   }
   const all = [...agg.entries()].sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok);
   const list = all.slice(0, state.projCap);
-  if (state.proj !== null && !list.some(([p]) => p === state.proj)) { const it = all.find(([p]) => p === state.proj); if (it) list.push(it); }
+  if (state.proj !== null && !list.some(([p]) => p === state.proj)) { const it = all.find(([p]) => p === state.proj); if (it) { list.push(it); list.sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok); } }
   const pmax = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
+  $("#projSub").textContent = "Working folder";
   const usd = colUsd;
   const map = state.projMode === "map";
   $("#projects").hidden = map; $("#projMap").hidden = !map;
@@ -1123,7 +1135,7 @@ function rove(hostSel, itemSel) {
   for (const el of items) el.tabIndex = el === pick ? 0 : -1;
 }
 const tip = $("#tip");
-let tipKey = null, lastMouse = null, tipFromFocus = false;
+let tipKey = null, lastMouse = null, tipFromFocus = false, tipSize = [0, 0];
 document.addEventListener("mousemove", (e) => { lastMouse = { clientX: e.clientX, clientY: e.clientY }; moveTip(e); });
 const hideMouseTip = (e) => { if (e && e.type === "scroll" && performance.now() < ignoreScrollUntil) return; if (!tipFromFocus) { tip.style.display = "none"; tipKey = null; lastMouse = null; } };
 document.documentElement.addEventListener("mouseleave", hideMouseTip);
@@ -1137,9 +1149,11 @@ function moveTip(e) {
   const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
   if (!svg || !svg._tip || !svg.parentElement) return;
   const key = svg.parentElement.id + ":" + k;
+  const fresh = key !== tipKey || tip.style.display !== "block";
   if (key !== tipKey) { tip.innerHTML = svg._tip(k); tipKey = key; }
   tip.style.display = "block";
-  const w = tip.offsetWidth, h = tip.offsetHeight;
+  if (fresh) tipSize = [tip.offsetWidth, tip.offsetHeight];
+  const [w, h] = tipSize;
   let x = e.clientX + 14, y = e.clientY + 14;
   if (x + w > innerWidth - 8) x = e.clientX - w - 14;
   if (y + h > innerHeight - 8) y = e.clientY - h - 14;
@@ -1172,6 +1186,7 @@ document.addEventListener("click", (e) => {
   const seg = t.closest(".seg button");
   if (seg) {
     const g = seg.parentElement.id;
+    if (seg.getAttribute("aria-pressed") === "true") return; // already selected: nothing changes, filters stay
     seg.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === seg));
     if (g === "srcSeg") { state.src = seg.dataset.v; state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projCap = 200; }
@@ -1229,13 +1244,13 @@ document.addEventListener("click", (e) => {
     return;
   }
   const proj = t.closest("[data-proj]");
-  if (proj) { const p = +proj.dataset.proj, where = proj.closest("[id]").id; state.proj = state.proj === p ? null : p; if (state.sess !== null && D.sessions[state.sess][2] !== state.proj) state.sess = null; render(); return refocus(e, `#${where} [data-proj="${p}"]`); }
+  if (proj) { const p = +proj.dataset.proj, where = proj.closest("[id]").id; state.proj = state.proj === p ? null : p; if (state.sess !== null && state.proj !== null && D.sessions[state.sess][2] !== state.proj) state.sess = null; render(); return refocus(e, `#${where} [data-proj="${p}"]`); }
 });
 // a click from the keyboard (detail 0) puts focus back on the same item after the redraw
 function refocus(e, sel) { if (e.detail === 0) { const el = document.querySelector(sel); if (el) el.focus(); } }
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".hbar, [data-day], [data-sess], [data-proj], [data-model], [data-sort], [data-more]")) {
-    e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); return;
+    e.preventDefault(); swallowClick = false; e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); return;
   }
   if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.target.matches && e.target.matches('.tabs [role="tab"]')) {
     const tabs = [...document.querySelectorAll('.tabs [role="tab"]')], i = tabs.indexOf(e.target);
@@ -1263,7 +1278,7 @@ document.addEventListener("keydown", (e) => {
         if (e.key === "ArrowUp" || e.key === "PageUp") return;
         items = ths;
       } else {
-        if ((e.key === "ArrowUp" || e.key === "PageUp") && e.target === rows[0]) { const th = host.querySelector(`th[data-sort="${lastSessTh}"]`) || ths[0]; if (th) th.focus(); return; }
+        if ((e.key === "ArrowUp" || e.key === "PageUp") && e.target === rows[0]) { const th = ths.find((el) => el.dataset.sort === lastSessTh) || ths[0]; if (th) th.focus(); return; }
         if (e.key === "ArrowLeft" || e.key === "ArrowRight") return;
         items = rows;
       }
@@ -1372,7 +1387,7 @@ document.addEventListener("mouseup", () => {
   state.day = [ks[0], ks[3]];
   render();
 });
-window.addEventListener("blur", () => { if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; if (p) render(); } });
+window.addEventListener("blur", () => { swallowClick = false; if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; if (p) render(); } });
 
 function requestScan(manual) {
   if (!window.ipc) return;

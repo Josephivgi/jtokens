@@ -730,7 +730,12 @@ fn main() {
     let quiet = flag("--serve") || flag("--smoke") || flag("--smoke-gui") || value("--export").is_some() || value("--json").is_some();
     if !quiet {
         std::panic::set_hook(Box::new(|info| if IN_SCAN.with(|c| c.get()) {
-            // the page says "Scan failed"; keep the cause so it can be reported
+            // the page says "Scan failed"; keep the cause so it can be reported.
+            // thread::scope re-raises a worker panic with this generic message; the worker already wrote the real one
+            let p = info.payload();
+            if p.downcast_ref::<&str>().copied().or_else(|| p.downcast_ref::<String>().map(|s| s.as_str())) == Some("a scoped thread panicked") {
+                return;
+            }
             let _ = fs::create_dir_all(data_dir());
             let _ = fs::write(data_dir().join("scan-error.txt"), format!("JTokens {} scan failed:\n{info}\n", env!("CARGO_PKG_VERSION")));
         } else { error_box(&format!("JTokens stopped because of an error.
@@ -820,9 +825,17 @@ fn run_gui(smoke: bool, report: Option<String>) {
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    // 1360x900, or smaller when the screen (after scaling) has less room; room is left for the taskbar and title bar
+    let fit = event_loop
+        .primary_monitor()
+        .map(|m| {
+            let s = m.size().to_logical::<f64>(m.scale_factor());
+            LogicalSize::new((s.width - 40.0).clamp(720.0, 1360.0), (s.height - 100.0).clamp(480.0, 900.0))
+        })
+        .unwrap_or(LogicalSize::new(1360.0, 900.0));
     let window = match WindowBuilder::new()
         .with_title(format!("JTokens {}", env!("CARGO_PKG_VERSION")))
-        .with_inner_size(LogicalSize::new(1360.0, 900.0))
+        .with_inner_size(fit)
         .with_min_inner_size(LogicalSize::new(720.0, 480.0))
         .with_visible(!smoke)
         .with_window_icon(<tao::window::Icon as tao::platform::windows::IconExtWindows>::from_resource(1, None).ok())

@@ -114,6 +114,7 @@ svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
 #daily .hit[data-idle] { cursor: default; }
 .hit:hover:not([data-idle]) { fill: var(--text-primary); fill-opacity: .06; }
 .hit:focus-visible { outline: none; stroke: var(--focus); stroke-width: 2; }
+@media (forced-colors: active) { .hit:focus-visible { stroke: Highlight; forced-color-adjust: none; } }
 .selected-band { fill: var(--text-primary); opacity: .07; }
 .hbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; align-items: center; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
 .hbar:hover { background: var(--surface-2); }
@@ -203,7 +204,7 @@ html:has(body.has-max) { overflow: hidden; }
 .kpi .dl { color: var(--text-secondary); font-weight: 600; }
 .avg, .avg-l, .vl, .callout, .selected-band { pointer-events: none; }
 .card .body :focus-visible, .chart :focus-visible { outline-offset: -2px; }
-svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600; }
+svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600; paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; stroke-linejoin: round; }
 #tip .tsep { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
 /* small windows: stack the cards and let the page scroll */
 @media (max-width: 1050px), (max-height: 660px) {
@@ -320,7 +321,7 @@ const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const slotByKey = new Map(); // model -> color slot, kept across scans
 const SRC_NAME = ["Claude Code", "Codex"];
 const projName = (p) => D.projNames ? D.projNames[p] : baseName(D.projects[p]);
-const midCut = (n) => n.length > 16 ? n.slice(0, 6) + "…" + n.slice(-9) : n; // scratch-2026-10-18-789ff2 -> scratc…18-789ff2
+const midCut = (n) => { const c = [...n]; return c.length > 16 ? c.slice(0, 6).join("") + "…" + c.slice(-9).join("") : n; }; // scratch-2026-10-18-789ff2 -> scratc…18-789ff2
 const midName = (n) => D.projShort && D.projShort.has(n) ? D.projShort.get(n) : midCut(n);
 // the oldest kept log for the selected tool (both tools: the oldest of either)
 const FD = () => state.src === "all" ? D.firstDay : D.firstDayBySrc[+state.src];
@@ -422,9 +423,10 @@ window.tkData = function (data) {
     D.projShort = new Map(D.projNames.map((n, i) => [n, cut[i]])); const groups = new Map();
     D.projNames.forEach((n, i) => { if (cc.get(cut[i]) > 1) { if (!groups.has(cut[i])) groups.set(cut[i], []); groups.get(cut[i]).push(n); } });
     for (const g of groups.values()) { // customer-alpha/frontend, customer-gamma/frontend -> custom…ha/frontend, custom…ma/frontend
-      let k = 9; const longest = Math.max(...g.map((n) => n.length));
-      while (k < longest && new Set(g.map((n) => n.slice(-k))).size < g.length) k++;
-      for (const n of g) D.projShort.set(n, n.length > k + 7 ? n.slice(0, 6) + "…" + n.slice(-k) : n);
+      const tail = (n, k) => [...n].slice(-k).join(""); // whole characters
+      let k = 9; const longest = Math.max(...g.map((n) => [...n].length));
+      while (k < longest && new Set(g.map((n) => tail(n, k))).size < g.length) k++;
+      for (const n of g) D.projShort.set(n, [...n].length > k + 7 ? [...n].slice(0, 6).join("") + "…" + tail(n, k) : n);
     } }
   const nameCount = new Map(); for (const m of D.models) nameCount.set(m.name, (nameCount.get(m.name) || 0) + 1);
   for (const m of D.models) if (nameCount.get(m.name) > 1 && m.name !== m.id) { m.name += " (" + m.id + ")"; }
@@ -507,7 +509,7 @@ function focusKey(el) {
 }
 const subObs = new MutationObserver((ms) => { for (const m of ms) { const el = m.target.nodeType === 3 ? m.target.parentElement : m.target; if (el && el.id !== "hourSub" && el.id !== "priceSub") el.title = el.textContent; } });
 document.querySelectorAll(".card .hd .sub").forEach((e) => subObs.observe(e, { childList: true, characterData: true, subtree: true }));
-const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):not(.callout):not(.avg-l), #hourly svg text:not(.vl), #modelTrend svg text").forEach((t) => t.setAttribute("aria-hidden", "true"));
+const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):not(.callout):not(.avg-l), #hourly svg text:not(.vl), #modelTrend svg text:not(.callout)").forEach((t) => t.setAttribute("aria-hidden", "true"));
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
@@ -744,7 +746,7 @@ function renderDaily() {
   const cumTot = cum.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
   const series = running ? cum : per, tots = running ? cumTot : totals;
   const max = Math.max(...tots, 0);
-  if (max <= 0) { $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; rove("#dailyLegend", "[data-model]"); $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
+  if (max <= 0) { $("#dailyHint").textContent = ""; $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; rove("#dailyLegend", "[data-model]"); $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4), L = axisL(ticks);
   const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ((state.day ? "range avg " : "avg ").length + Math.max(6, fmtVal(max).length)))), plotW = W - L - R;
   const n = buckets.length, slot = plotW / n, bw = Math.max(1, Math.min(64, slot * (running ? 0.86 : 0.72)));
@@ -867,7 +869,7 @@ function renderModels() {
     agg.set(r[0], a);
   }
   const list = [...agg.entries()].sort((a, b) => (state.metric === "cost" ? (b[1].cost - a[1].cost) || (b[1].tok - a[1].tok) : b[1].tok - a[1].tok));
-  if (!list.length) { $("#models").innerHTML = `<div class="empty">No usage.</div>`; return; }
+  if (!list.length) { $("#modelSub").textContent = ""; $("#models").innerHTML = `<div class="empty">No usage.</div>`; return; }
   const max = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
   const bothTools = state.src === "all" && new Set(list.map(([m]) => D.models[m].src)).size > 1;
   $("#models").innerHTML = list.map(([m, a]) => {
@@ -977,6 +979,8 @@ function renderModelTrend() {
   if (state.model !== null && state.metric === "cost" && !D.models[state.model].priced) s += `<text x="${L + 8}" y="${T + 12}" class="callout">${esc(D.models[state.model].name.length > 22 ? D.models[state.model].name.slice(0, 21) + "…" : D.models[state.model].name)}: no public price</text>`;
   s += `</svg>`;
   $("#modelTrend").innerHTML = s;
+  { const usedAt = (i) => i < upto && order.some((m) => series.get(m)[i] > 0), cur = roveAt.modelTrend ? +roveAt.modelTrend.replace(/\D/g, "") : -1;
+    if (!usedAt(cur) && !(document.activeElement && document.activeElement.closest && document.activeElement.closest("#modelTrend"))) { for (let i = upto - 1; i >= 0; i--) if (usedAt(i)) { roveAt.modelTrend = `[data-i="${i}"]`; break; } } }
   rove("#modelTrend", ".hit");
   $("#modelTrend svg")._tip = (i) => {
     const rows = rowsAt(i);
@@ -992,10 +996,11 @@ function renderHourly() {
   $("#hourSub").textContent = state.day ? spanLabel() + ", local time" : week ? "Weekday by hour totals" : "Hourly totals";
   $("#hourSub").title = (state.day ? spanLabel() + ", local time" : "Local time, whole range") + (week ? ". Each cell is the total for that weekday and hour; stronger is more." : "");
   if (week) return renderHeat();
-  const vals = new Array(24).fill(0);
-  for (const r of D.rows) { if (passes(r)) vals[r[10]] += val(r); }
+  const vals = new Array(24).fill(0), unpH = new Array(24).fill(0);
+  for (const r of D.rows) { if (passes(r)) { vals[r[10]] += val(r); if (state.metric === "cost" && !D.models[r[0]].priced) unpH[r[10]] += r[3] + r[4] + r[5] + r[6]; } }
   const max = Math.max(...vals);
-  if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">${noUsage({}, "No usage.")}</div>`; return; }
+  const hourVal = (h) => !vals[h] && unpH[h] ? `no priced usage, ${fmtTok(unpH[h])} unpriced tokens` : tipVal(vals[h]);
+  if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">${unpH.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({}, "No usage.")}</div>`; return; }
   const { W, H } = boxOf("#hourly"), B = 22, T = 8, plotH = H - B - T;
   const ticks = niceTicks(max, plotH > 360 ? 5 : 3), top = ticks[ticks.length - 1], L = axisL(ticks), plotW = W - L - 4;
   const slot = plotW / 24, bw = slot * 0.7, every = slot < 13 ? 6 : slot > 40 ? 1 : slot > 24 ? 2 : 3;
@@ -1009,14 +1014,15 @@ function renderHourly() {
     if (onlyToday && h > nowH) { if (h % every === 0 || (h === 23 && (23 % every) * slot >= 26)) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`; return; } // not yet
     const part = onlyToday && h === nowH ? ' fill-opacity="0.6"' : ""; // this hour is not over
     if (hh > 0) s += hh > 4 ? `<path class="bar" d="${roundTop(x, y(v), bw, hh, 3)}" fill="var(--accent)"${part}/>` : `<rect class="bar" x="${x}" y="${y(v)}" width="${bw}" height="${hh}" fill="var(--accent)"${part}/>`;
+    else if (unpH[h]) s += `<rect x="${x}" y="${y(0) - 2}" width="${bw}" height="2" fill="var(--text-muted)"/>`; // a mark, so the hour does not look empty
     if (h % every === 0 || (h === 23 && (23 % every) * slot >= 26)) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`;
-    s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59: ${tipVal(v)}${onlyToday && h === nowH ? " so far" : ""}"/>`;
+    s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59: ${hourVal(h)}${onlyToday && h === nowH ? " so far" : ""}"/>`;
   });
   s += `</svg>`;
   $("#hourly").innerHTML = s;
   if (!roveAt.hourly || (!(vals[+roveAt.hourly.replace(/\D/g, "")] > 0) && !(document.activeElement && document.activeElement.closest && document.activeElement.closest("#hourly")))) { const top = vals.indexOf(Math.max(...vals)); if (vals[top] > 0) roveAt.hourly = `[data-hour="${top}"]`; }
   rove("#hourly", ".hit");
-  $("#hourly svg")._tip = (h) => `<div class="h">${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${tipVal(vals[h])}${onlyToday && h === nowH ? " so far" : ""}</span></div>`;
+  $("#hourly svg")._tip = (h) => `<div class="h">${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${hourVal(h)}${onlyToday && h === nowH ? " so far" : ""}</span></div>`;
 }
 
 // weekday x hour grid: when in the week the usage happens
@@ -1270,7 +1276,7 @@ function moveTip(e) {
   const [w, h] = tipSize;
   let x = e.clientX + 14, y = e.clientY + 14;
   if (x + w > innerWidth - 8) x = e.clientX - w - 14;
-  if (y + h > innerHeight - 8) y = e.clientY - h - 14;
+  if (y + h > innerHeight - 8) y = Math.max(8, e.clientY - h - 14);
   tip.style.left = x + "px"; tip.style.top = y + "px";
 }
 document.addEventListener("focusin", (e) => {
@@ -1409,6 +1415,7 @@ document.addEventListener("keydown", (e) => {
     if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; return; }
     if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; } // the mouse button is still down: eat the click that comes with its release
     if (document.querySelector(".card.max")) return expandCard(null);
+    { const pre = document.activeElement && document.activeElement.closest && document.activeElement.closest("#update pre"); if (pre) { pre.hidden = true; const nb = $('#update [data-upd="notes"]'); if (nb) { nb.setAttribute("aria-expanded", "false"); nb.focus(); } return; } }
     // Esc inside the update notes is not a filter reset
     if (!(document.activeElement && document.activeElement.closest && document.activeElement.closest("#update")) && !$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { if (document.activeElement && document.activeElement.closest("#filters")) focusOverride = '#rangeSeg [aria-pressed="true"]'; Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
     if (isFullscreen) return setFullscreen(false);
@@ -1556,7 +1563,7 @@ $("#theme").addEventListener("click", () => { const t = document.documentElement
 window.tkScanError = function () {
   const again = scanFailed && !manualScan; scanFailed = true; manualScan = false; $("#scaninfo").setAttribute("aria-live", "polite"); scanDone(); $("#scaninfo").removeAttribute("aria-busy");
   if (D) { if (!again) render(); if ($("#scaninfo").textContent !== "Scan failed, showing the last good scan") $("#scaninfo").textContent = "Scan failed, showing the last good scan"; } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; lastNoteKey = null; }
-  $("#scaninfo").title = "Details are in scan-error.txt in %LOCALAPPDATA%\\JTokens";
+  $("#scaninfo").title = "Details, if they could be saved, are in scan-error.txt in %LOCALAPPDATA%\\JTokens";
 };
 window.tkUpdate = function (u) {
   const box = $("#update"), ver = $("#appver");

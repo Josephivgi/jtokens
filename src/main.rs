@@ -327,10 +327,10 @@ fn claude_session(path: &Path) -> String {
 
 fn codex_session(path: &Path) -> String {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    if stem.len() >= 36 {
-        stem[stem.len() - 36..].to_string()
-    } else {
-        stem
+    // the last 36 characters (the session id); by characters, so a non-ASCII name cannot split a char
+    match stem.char_indices().rev().nth(35) {
+        Some((i, _)) => stem[i..].to_string(),
+        None => stem,
     }
 }
 
@@ -839,7 +839,7 @@ fn run_gui(smoke: bool, report: Option<String>) {
     let mut web_context = wry::WebContext::new(Some(data_dir().join("WebView2")));
     let webview = match WebViewBuilder::new_with_web_context(&mut web_context)
         .with_html(UI.replacen("data-theme=\"dark\"", &format!("data-theme=\"{}\"", load_theme()), 1))
-        .with_background_color((17, 17, 16, 255))
+        .with_background_color(if load_theme() == "light" { (243, 243, 241, 255) } else { (17, 17, 16, 255) })
         .with_devtools(cfg!(debug_assertions))
         .with_ipc_handler(move |req| {
             let body = req.body();

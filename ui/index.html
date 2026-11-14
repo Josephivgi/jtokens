@@ -104,7 +104,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .tm:hover { outline: 1px solid var(--text-secondary); }
 .tm.sel { outline: 2px solid var(--text-primary); }
 .tm b { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
-.tm span { font-size: 11px; color: var(--text-primary); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.tm span { font-size: 11px; color: var(--text-primary); opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .legend i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
 svg { display: block; overflow: visible; }
@@ -147,7 +147,7 @@ tbody tr[aria-selected="true"] td { background-color: var(--surface-2); }
 td.db { background-image: linear-gradient(to right, color-mix(in srgb, var(--accent) 22%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 8px) 4px; background-position: 4px calc(100% - 3px); }
 .drag-band { fill: var(--accent); opacity: .16; }
 .muted { color: var(--text-muted); }
-#tip { max-height: calc(100vh - 16px); overflow: hidden; position: fixed; pointer-events: none; z-index: 50; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: none; max-width: 340px; }
+#tip { max-height: calc(100vh - 16px); overflow: auto; position: fixed; pointer-events: none; z-index: 50; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: none; max-width: 340px; }
 #tip .h { font-weight: 600; margin-bottom: 4px; }
 #tip .r { display: flex; justify-content: space-between; gap: 16px; }
 #tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
@@ -193,7 +193,7 @@ svg tspan.avg-s { fill: var(--text-muted); font-size: 10px; }
 svg text.vl { fill: var(--text-secondary); font-size: 11px; }
 .kpi { position: relative; container-type: inline-size; }
 @container (max-width: 150px) { .kpi .spark { display: none; } }
-@container (max-width: 205px) { .kpi .v.long ~ .spark { display: none; } }
+@container (max-width: 205px) { .kpi .v.long ~ .spark { transform: scaleX(.6); transform-origin: right center; } }
 /* API prices: the overview filters do nothing there */
 body.on-prices #srcSeg, body.on-prices #rangeSeg, body.on-prices #metricSeg { visibility: hidden; }
 /* a full screen card owns the scroll; the page behind it stays put */
@@ -252,7 +252,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
 
   <div class="update" id="update" role="status" hidden></div>
 
-  <section id="tab-overview" class="dash" role="tabpanel" aria-labelledby="tab-btn-overview">
+  <main style="display: contents"><section id="tab-overview" class="dash" role="tabpanel" aria-labelledby="tab-btn-overview">
     <div class="bar2"><div class="filters" id="filters"></div><div class="problems" id="problems" aria-live="polite">Scanning your logs…</div></div>
     <div class="kpis" id="kpis"></div>
     <div class="board">
@@ -304,7 +304,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         </div>
       </div>
     </div>
-  </section>
+  </section></main>
   <footer><span id="scaninfo">Scanning…</span><span class="spacer"></span><span class="appver" id="appver" aria-live="polite" hidden></span></footer>
 </div>
 <div id="tip" role="tooltip"></div>
@@ -410,7 +410,7 @@ window.tkData = function (data) {
     focusOverride = i < 0 ? `#${feHost.id} [tabindex="0"]` : `#${feHost.id} [data-${feId[0]}="${i}"]`;
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
-  const pn = D.projects.map((x) => baseName(x));
+  const pn = D.projects.map((x) => HOME_RE.test(x) ? "Home folder" : baseName(x)); // your user name is not a project name
   D.projNames = pn.slice();
   for (let depth = 2; depth <= 64; depth++) {
     const cnt = new Map(); for (const n of D.projNames) cnt.set(n, (cnt.get(n) || 0) + 1);
@@ -623,20 +623,22 @@ function renderKpis() {
   const prevEmpty = prev && !prev.tok && !prev.reqs;
   const delta = (now, before, fmt, fallback, first) => {
     if (!prev || (!now && !before)) return fallback;
+    if (!now && before && reqs > 0) return fallback; // everything so far is in the hour in progress, which is not compared yet
     if (noHistory) return fallback; // the problems line says why
     // with no earlier usage at all, say so once (on the first tile)
     if (!before) return prevEmpty && !first ? fallback : first && prev.tok ? `no priced usage in ${prevName}` : `no usage in ${prevName}`;
     const pct = (now - before) / before * 100, a = Math.abs(pct);
-    if (a < 0.05) return `<span class="dl" title="${prevName}: ${fmt(before)}">no change</span> vs ${prevName}`;
+    const hov = `Complete hours only. Now: ${fmt(now)}. ${prevName[0].toUpperCase() + prevName.slice(1)}: ${fmt(before)}.`;
+    if (a < 0.05) return `<span class="dl" title="${hov}">no change</span> vs ${prevName}`;
     const arrow = pct > 0 ? "↑ " : "↓ ";
-    return `<span class="dl" title="${prevName}: ${fmt(before)}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}`;
+    return `<span class="dl" title="${hov}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}`;
   };
   const perDayCaption = () => {
     const plain = fullDays < days.size ? "avg of days with use, not today" : "avg of days with use";
     if (state.range === 1) return "today only";
     if (days.size === 1 && days.has(todayKey)) return "today so far, no full day yet";
     if (prev && prev.cost > 0 && !prev.perDay && !noHistory) return plain; // the previous period had no full day to compare
-    return delta(perDay, prev && prev.perDay, fmtUsd, plain);
+    return delta(perDay, prev && prev.perDay, fmtUsd, plain, true);
   };
   const tiles = [
     ["API cost", fmtUsd(cost), delta(cost - costN, prev && prev.cost, fmtUsd, state.day ? spanLabel() : state.range ? `last ${state.range === 1 ? "day" : state.range + " days"}` : "all time", true), trend && trend.cost],
@@ -742,7 +744,7 @@ function renderDaily() {
   const cumTot = cum.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
   const series = running ? cum : per, tots = running ? cumTot : totals;
   const max = Math.max(...tots, 0);
-  if (max <= 0) { $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
+  if (max <= 0) { $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; rove("#dailyLegend", "[data-model]"); $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4), L = axisL(ticks);
   const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ("avg " + fmtVal(max)).length)), plotW = W - L - R;
   const n = buckets.length, slot = plotW / n, bw = Math.max(1, Math.min(64, slot * (running ? 0.86 : 0.72)));
@@ -792,7 +794,7 @@ function renderDaily() {
     // average per bar over the whole range, idle days included; the last bar holds today, which is not over, so it is left out
     const full = n - 1;
     avg = full ? totals.slice(0, full).reduce((a, b) => a + b, 0) / full : 0;
-    if (n > 1 && full) s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) + 11 > H - 20 ? y(avg) - 17 : y(avg) - 2}" class="avg-l">avg ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}</tspan></text>`;
+    if (n > 1 && full) s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) + 11 > H - 20 ? y(avg) - 17 : y(avg) - 2}" class="avg-l">${state.day ? "range avg" : "avg"} ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}</tspan></text>`;
   }
   s += `</svg>`;
   $("#daily").innerHTML = s;
@@ -969,7 +971,7 @@ function renderModelTrend() {
     const a11y = ` tabindex="-1" role="img" aria-label="${esc(full(i))}: ${esc(rowsAt(i).map(([nm, , v]) => nm + " " + tipVal(v)).join(", ") || none(i))}"`;
     s += `<rect class="hit" data-i="${i}" x="${x(i) - slot / 2}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
-  if (state.model !== null && state.metric === "cost" && !D.models[state.model].priced) s += `<text x="${L + 8}" y="${T + 12}" class="callout">${esc(D.models[state.model].name)} has no public price</text>`;
+  if (state.model !== null && state.metric === "cost" && !D.models[state.model].priced) s += `<text x="${L + 8}" y="${T + 12}" class="callout">${esc(D.models[state.model].name.length > 22 ? D.models[state.model].name.slice(0, 21) + "…" : D.models[state.model].name)}: no public price</text>`;
   s += `</svg>`;
   $("#modelTrend").innerHTML = s;
   rove("#modelTrend", ".hit");
@@ -1042,7 +1044,7 @@ function renderHeat() {
     }
     s += `</g>`;
   }
-  for (let h = 0; h < 24; h += every) s += `<text aria-hidden="true" x="${L + h * cw + cw / 2}" y="${T + 7 * ch + 14}" text-anchor="middle">${hourName(h)}</text>`;
+  for (let h = 0; h < 24; h = h + every > 23 && h !== 23 && (23 - h) * cw >= 26 ? 23 : h + every) s += `<text aria-hidden="true" x="${L + h * cw + cw / 2}" y="${T + 7 * ch + 14}" text-anchor="middle">${hourName(h)}</text>`;
   {
     // a less-to-more key under the grid when there is room
     const ky = T + 7 * ch + 24, kx = Math.max(L + 30, W - 2 - 5 * 14 - 120);
@@ -1170,7 +1172,7 @@ function renderProjMap(list) {
     const strength = it.p === null ? 12 : Math.round(20 + 40 * Math.sqrt(it.v / top)); // capped so labels keep contrast
     const name = it.p === null ? (w > 60 ? `${it.n} more` : `+${it.n}`) : projName(it.p);
     const big = w > 60 && h > 34, small = w > 26 && h > 16;
-    const tip = it.p === null ? `${it.n} smaller projects. Click to show them in the list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${it.a.priced ? colUsd(it.a.cost) : "no public price"}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
+    const tip = it.p === null ? `${it.n} smaller projects. Click to show them in the list.` : `${D.projects[it.p]}, ${share >= 1 ? Math.round(share) : share > 0 && share < 0.1 ? "<0.1" : share.toFixed(1)}% of total\n${fmtTok(it.a.tok)} tokens, ${it.a.priced ? colUsd(it.a.cost) : "no public price"}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
     return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="-1" role="button" aria-pressed="${state.proj === it.p}" aria-label="${esc(tip.replace(/\n/g, ". "))}"` : ` data-more tabindex="-1" role="button" aria-label="${it.n} smaller projects: ${fmtVal(it.v)}. Shows them in the list."`} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(midName(name))}</b><span>${it.p !== null && state.metric === "cost" && !it.a.priced ? "n/a" : `${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share > 0 && share < 0.1 ? "<0.1" : share.toFixed(1)}%`}</span>` : small ? `<b>${esc(midName(name))}</b>` : ""}</div>`;
   }).join("");
   rove("#projMap", ".tm[data-proj], .tm[data-more]");
@@ -1347,9 +1349,9 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (t.closest("[data-more]")) {
-    state.projMode = "list"; state.projCap = Math.max(state.projCap, D.projects.length);
+    state.projMode = "list"; state.projCap = Math.max(state.projCap, Math.min(D.projects.length, 1000)); // all of them, up to 1000 rows; Show more past that
     $("#projMode").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === "list"));
-    renderProjects(); const first = $("#projects tbody tr"); if (first && e.detail === 0) first.focus();
+    renderProjects(); const first = $("#projects tbody tr"); if (first) first.focus({ preventScroll: true });
     return;
   }
   const proj = t.closest("[data-proj]");
@@ -1560,7 +1562,7 @@ window.tkUpdate = function (u) {
     show(`<span class="msg"><strong>JTokens ${esc(u.version)} is available.</strong> You have ${esc(u.current)}.</span>
       ${u.notes ? `<button class="btn" type="button" data-upd="notes" aria-expanded="false">What's new</button>` : `<a class="btn" href="${esc(u.page)}" data-open="${esc(u.page)}">What's new</a>`}
       <button class="btn btn-primary" type="button" data-upd="install">Install and restart</button>
-      ${u.notes ? `<pre hidden tabindex="0">${esc(u.notes.replace(/\*\*/g, "").replace(/^- /gm, "• "))}</pre>` : ""}`);
+      ${u.notes ? `<pre hidden tabindex="0" role="region" aria-label="What's new">${esc(u.notes.replace(/\*\*/g, "").replace(/^- /gm, "• "))}</pre>` : ""}`);
     if (notesOpen && box.querySelector("pre")) { box.querySelector("pre").hidden = false; const nb = box.querySelector('[data-upd="notes"]'); if (nb) nb.setAttribute("aria-expanded", "true"); }
   } else if (u.s === "downloading") {
     const pct = u.total ? Math.floor(100 * u.done / u.total) : 0;

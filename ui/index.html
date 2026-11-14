@@ -313,7 +313,7 @@ const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const slotByKey = new Map(); // model -> color slot, kept across scans
 const SRC_NAME = ["Claude Code", "Codex"];
 const projName = (p) => D.projNames ? D.projNames[p] : baseName(D.projects[p]);
-const midName = (n) => n.length > 24 ? n.slice(0, 12) + "…" + n.slice(-10) : n; // scratch-2026-10-18-789ff2 -> scratch-2026…-18-789ff2
+const midName = (n) => n.length > 18 ? n.slice(0, 8) + "…" + n.slice(-9) : n; // scratch-2026-10-18-789ff2 -> scratch-…18-789ff2
 // the oldest kept log for the selected tool (both tools: the oldest of either)
 const FD = () => state.src === "all" ? D.firstDay : D.firstDayBySrc[+state.src];
 const FH = () => state.src === "all" ? D.firstHour : D.firstHourBySrc[+state.src];

@@ -82,7 +82,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 /* narrow cards drop the hint so the title and buttons fit */
 @container (max-width: 240px) { .card .hd .sub { display: none; } }
 @container (max-width: 520px) { #c-daily .hd .sub { display: none; } }
-.card .hd { user-select: none; display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; }
+.card .hd { user-select: none; display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; min-height: 30px; }
 .card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; max-width: 100%; }
 .card .hd > .seg, .card .hd > .xp { flex: none; }
 .card .hd .sub { flex: 0 100 auto; } /* the hint gives up its room before the title does */
@@ -90,6 +90,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .card:not(.max) #trendLegend span { flex: none; white-space: nowrap; }
 .card:not(.max) #trendLegend span[data-model] { flex: 0 1 auto; min-width: 0; }
 .legend em { min-width: 0; }
+.card:not(.max) #trendLegend :focus-visible { outline-offset: -2px; }
 .card .sub { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .card .body { flex: 1; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .chart { flex: 1; min-height: 0; position: relative; overflow: hidden; }
@@ -135,7 +136,8 @@ table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nu
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 th { color: var(--text-secondary); font-weight: 600; font-size: 12px; user-select: none; position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
 td.num, th.num { text-align: right; }
-td.cut { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+html, .update pre { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+td.cut { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 th[data-sort] { cursor: pointer; }
 td.wrap { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
 tbody tr { cursor: pointer; }
@@ -498,7 +500,7 @@ const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
 // selector for the focused item, so a redraw (Live refresh, filter) can put focus back
 function focusKey(el) {
   if (!el || !el.getAttribute) return null;
-  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi", "data-showall", "data-more"]) {
+  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi", "data-showall", "data-more", "data-legmore"]) {
     if (el.hasAttribute(a)) { const host = el.closest("[id]"); return host ? `#${host.id} [${a}="${el.getAttribute(a)}"]` : null; }
   }
   return null;
@@ -714,18 +716,19 @@ function renderDaily() {
   const plotH = H - B - T;
   const step = (W - 52 - 64) / days.length < 5 ? 7 : 1; // same cutoff in both views, so the button text does not flip
   $("#dailyMode [data-v=day]").textContent = step === 7 ? "Per week" : "Per day";
-  $("#dailyHint").textContent = days.length === 1 ? "Today so far" : step === 7 ? "Click a week, or drag across weeks, to filter" : "Click a day, or drag across days, to filter";
+  $("#dailyHint").textContent = days.length === 1 ? "Today so far" : step === 7 ? "Click or drag weeks to filter" : "Click or drag to filter";
   { const b = $("#dailyTitle").closest(".card").querySelector("[data-expand]"), what = running ? "Running total chart" : step === 7 ? "Weekly chart" : "Daily chart"; if (b && b.dataset.what !== what) { b.dataset.what = what; b.setAttribute("aria-label", (b.closest(".card").classList.contains("max") ? "Close full screen: " : "Full screen: ") + what); } }
   $("#dailyTitle").textContent = (running ? "Running total " : step === 7 ? "Weekly " : "Daily ") + (state.metric === "cost" ? "API cost by model" : "tokens by model");
   const buckets = [];
   for (let i = 0; i < days.length; i += step) buckets.push({ from: days[i], to: days[Math.min(i + step - 1, days.length - 1)] });
   const idx = new Map(days.map((k, i) => [k, Math.floor(i / step)]));
-  const per = buckets.map(() => new Map()), anyRow = buckets.map(() => false);
+  const per = buckets.map(() => new Map()), anyRow = buckets.map(() => false), unpTok = buckets.map(() => 0);
   for (const r of D.rows) {
     if (!passes(r, { ignoreDay: true })) continue;
     const i = idx.get(r[9]); if (i === undefined) continue;
     const key = ownSeries(r[0]) ? r[0] : -1;
     per[i].set(key, (per[i].get(key) || 0) + val(r)); anyRow[i] = true;
+    if (!D.models[r[0]].priced) unpTok[i] += r[3] + r[4] + r[5] + r[6];
   }
   const stackOrder = models.filter(ownSeries); stackOrder.push(-1);
   const totals = per.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
@@ -735,7 +738,7 @@ function renderDaily() {
   const cumTot = cum.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
   const series = running ? cum : per, tots = running ? cumTot : totals;
   const max = Math.max(...tots, 0);
-  if (max <= 0) { $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
+  if (max <= 0) { $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4), L = axisL(ticks);
   const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ("avg " + fmtVal(max)).length)), plotW = W - L - R;
   const n = buckets.length, slot = plotW / n, bw = Math.max(1, Math.min(64, slot * (running ? 0.86 : 0.72)));
@@ -772,7 +775,9 @@ function renderDaily() {
     if ((i % labelEvery === 0 && !skipP) || i === n - 1) { const lx = L + i * slot + slot / 2, lw = 6.4 * dayLabel(b.from).length, end = lx + lw / 2 > W - 2; s += `<text x="${end ? W - 2 : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${dayLabel(b.from)}</text>`; }
     if (!running && totals[i] > 0 && slot >= Math.max(34, 8 + 6.4 * fmtVal(totals[i]).length)) s += `<text x="${L + i * slot + slot / 2}" y="${y(totals[i]) - 5}" text-anchor="middle" class="vl">${fmtVal(totals[i])}</text>`;
     const pick = n > 1 && (totals[i] > 0 || anyRow[i]); // unpriced-only days are still days with use
-    const a11y = ` tabindex="-1" role="${pick ? "button" : "img"}"${pick ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${tipVal(tots[i])}${running || b.to === todayK ? " so far" : ""}${segs.length > 1 ? ". " + esc(segs.slice().sort((p, q) => q[2] - p[2]).map(([m, , v]) => (m === -1 ? "Other models" : D.models[m].name) + " " + tipVal(v)).join(", ")) : ""}"`;
+    const unpOnly = state.metric === "cost" && !totals[i] && unpTok[i] > 0;
+    if (unpOnly && !running) s += `<rect x="${x}" y="${y(0) - 2}" width="${bw}" height="2" fill="var(--text-muted)"/>`; // a mark, so the day does not look empty
+    const a11y = ` tabindex="-1" role="${pick ? "button" : "img"}"${pick ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${unpOnly && !running ? `no priced usage, ${fmtTok(unpTok[i])} unpriced tokens` : tipVal(tots[i])}${running || b.to === todayK ? " so far" : ""}${segs.length > 1 ? ". " + esc(segs.slice().sort((p, q) => q[2] - p[2]).map(([m, , v]) => (m === -1 ? "Other models" : D.models[m].name) + " " + tipVal(v)).join(", ")) : ""}"`;
     s += `<rect class="hit"${pick ? ` data-day="${b.from}" data-to="${b.to}"` : n > 1 ? ` data-idle="${b.from}" data-idle-to="${b.to}"` : ""} data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
   let avg = 0;
@@ -783,7 +788,7 @@ function renderDaily() {
     // average per bar over the whole range, idle days included; the last bar holds today, which is not over, so it is left out
     const full = n - 1;
     avg = full ? totals.slice(0, full).reduce((a, b) => a + b, 0) / full : 0;
-    if (n > 1 && full) s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) - 2}" class="avg-l">avg ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}</tspan></text>`;
+    if (n > 1 && full) s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) + 11 > H - 20 ? y(avg) - 17 : y(avg) - 2}" class="avg-l">avg ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}</tspan></text>`;
   }
   s += `</svg>`;
   $("#daily").innerHTML = s;
@@ -794,7 +799,8 @@ function renderDaily() {
     const part = step === 7 && i === n - 1 && days.length % 7 ? " (partial week)" : "";
     const head = running ? `${name(buckets[i])}${part}: ${tipVal(cumTot[i])} so far` : `${name(buckets[i])}${part}: ${tipVal(totals[i])}${buckets[i].to === dayKey(new Date()) ? " so far" : ""}`;
     const foot = running ? `<div class="r tsep"><span>That ${unit}</span><span>${tipVal(totals[i])}</span></div>` : `<div class="r tsep"><span>Running total</span><span>${tipVal(cumTot[i])}</span></div>` + (avg ? `<div class="r"><span>Average per ${unit}, ${step === 7 ? "full weeks" : "idle days incl., today left out"}</span><span>${tipVal(avg)}</span></div>` : "");
-    return `<div class="h">${head}</div>` + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${tipVal(v)}</span></div>`).join("") + foot;
+    const unp = state.metric === "cost" && !totals[i] && unpTok[i] > 0 ? `<div class="r"><span>No priced usage</span><span>${fmtTok(unpTok[i])} unpriced tokens</span></div>` : "";
+    return `<div class="h">${head}</div>` + unp + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${tipVal(v)}</span></div>`).join("") + foot;
   };
 }
 
@@ -913,9 +919,9 @@ function renderModelTrend() {
     const all = topModelsFor(used), small = !card.classList.contains("max");
     const shown = small ? all.filter((m, i) => i < 3 || m === state.model) : all;
     // count legend entries, not models: everything under Other is one entry
-    const entries = (l) => l.filter(ownSeries).length + (l.some((m) => !ownSeries(m)) ? 1 : 0), more = entries(all) - entries(shown);
+    const more = all.filter((m) => !shown.includes(m)).length; // the count matches the names it lists
     const hiddenNames = all.filter((m) => !shown.includes(m)).map((m) => D.models[m].name).join(", ");
-    $("#trendLegend").innerHTML = legendHtml(shown) + (small && more > 0 ? `<span class="muted" tabindex="0" role="note" aria-label="Also: ${esc(hiddenNames)}" title="${esc(hiddenNames)}">+${more} more</span>` : "");
+    $("#trendLegend").innerHTML = legendHtml(shown) + (small && more > 0 ? `<span class="muted" data-legmore="1" tabindex="0" role="note" aria-label="Also: ${esc(hiddenNames)}" title="${esc(hiddenNames)}">+${more} more</span>` : "");
     rove("#trendLegend", "[data-model]");
   }
   const max = Math.max(0, ...[...series.values()].flat());
@@ -1137,7 +1143,7 @@ function renderProjMap(list) {
     sh = strip.length ? (main.length ? Math.min(28, Math.floor(H / 3)) : H) : 0;
     mr = squarify(main.map((it) => it.v), 0, 0, W, H - sh);
     // a box squeezed too thin for a label joins the tail box
-    const bad = main.findIndex((it, i) => i > 0 && it.p !== state.proj && (mr[i][2] < 28 || mr[i][3] < 18));
+    const bad = main.findIndex((it, i) => i > 0 && it.p !== state.proj && (mr[i][2] < (i === 1 ? 60 : 28) || mr[i][3] < 18));
     if (bad < 0) break;
     const [it] = main.splice(bad, 1);
     if (strip.filter((x) => x.p !== null).length < 3) { strip = [...strip.filter((x) => x.p !== null), it, ...strip.filter((x) => x.p === null)]; continue; } // the second biggest is not hidden in "more"
@@ -1221,7 +1227,7 @@ function rove(hostSel, itemSel) {
 const tip = $("#tip");
 let tipKey = null, lastMouse = null, tipFromFocus = false, tipSize = [0, 0];
 document.addEventListener("mousemove", (e) => { lastMouse = { clientX: e.clientX, clientY: e.clientY }; moveTip(e); });
-const hideMouseTip = (e) => { if (e && e.type === "scroll" && performance.now() < ignoreScrollUntil) return; if (!tipFromFocus || (e && e.type === "scroll")) { tip.style.display = "none"; tipKey = null; lastMouse = null; } };
+const hideMouseTip = (e) => { if (e && e.type === "scroll" && performance.now() < ignoreScrollUntil) return; if (!tipFromFocus || (e && e.type === "scroll")) { tip.style.display = "none"; tipKey = null; lastMouse = null; tipFromFocus = false; } };
 document.documentElement.addEventListener("mouseleave", hideMouseTip);
 document.addEventListener("scroll", hideMouseTip, true);
 document.addEventListener("focusin", (e) => {
@@ -1232,6 +1238,7 @@ document.addEventListener("focusin", (e) => {
 document.addEventListener("focusout", () => { if (tipKey === "more") { tip.style.display = "none"; tipKey = null; tipFromFocus = false; } });
 window.addEventListener("blur", () => hideMouseTip());
 function moveTip(e) {
+  if (tipKey === "more" && tipFromFocus) return; // a keyboard-opened name list stays until focus leaves
   const hit = e.target.closest && e.target.closest(".hit");
   tipFromFocus = false;
   if (!hit) { tip.style.display = "none"; tipKey = null; return; }
@@ -1348,7 +1355,7 @@ document.addEventListener("keydown", (e) => {
     const next = e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length - 1] : tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
     next.click(); next.focus(); return;
   }
-  if ((e.key.startsWith("Arrow") || ["Home", "End", "PageUp", "PageDown"].includes(e.key)) && e.target.matches && e.target.matches('#hourly [role="gridcell"]')) {
+  if ((e.key.startsWith("Arrow") || ["Home", "End", "PageUp", "PageDown"].includes(e.key)) && !(e.altKey || e.metaKey || e.shiftKey) && e.target.matches && e.target.matches('#hourly [role="gridcell"]')) {
     e.preventDefault();
     const i = +e.target.dataset.i, wd = Math.floor(i / 24), h = i % 24;
     // Home/End: start or end of the row (with Ctrl: first or last cell); PageUp/PageDown: top or bottom row
@@ -1489,7 +1496,7 @@ function requestScan(manual) {
   if (scanning) {
     if (manual === true && !manualScan) {
       queuedManual = true; $("#refresh").setAttribute("aria-disabled", "true");
-      $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").setAttribute("aria-busy", "true");
+      $("#scaninfo").setAttribute("aria-live", "polite");
       const age = Date.now() - scanStartedAt;
       $("#scaninfo").textContent = age > 60000 ? "Scan still running after a minute. If it never finishes, restart JTokens." : age > 30000 ? "Still scanning. Large or slow log folders can take a while." : "Scanning…";
     }
@@ -1498,7 +1505,7 @@ function requestScan(manual) {
   scanning = true; scanStartedAt = Date.now();
   if (manual === true) $("#refresh").setAttribute("aria-disabled", "true"); // aria-disabled keeps keyboard focus on it
   // a manual Refresh shows that it is working; Live ticks stay quiet so the window does not flicker
-  if (manual === true) { manualScan = true; $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Scanning…"; $("#scaninfo").setAttribute("aria-busy", "true"); }
+  if (manual === true) { manualScan = true; $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Scanning…"; }
   window.ipc.postMessage("scan");
   const started = ++scanSeq;
   setTimeout(() => { if (scanning && scanSeq === started && (manual === true || queuedManual || !D)) $("#scaninfo").textContent = "Still scanning. Large or slow log folders can take a while."; }, 30000);

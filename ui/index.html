@@ -60,7 +60,7 @@ header h1 { font-size: 15px; font-weight: 650; margin: 0 6px 0 0; letter-spacing
 .btn:hover { background: var(--surface-2); }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .6; cursor: default; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--text-secondary); cursor: pointer; }
+label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24px; color: var(--text-secondary); cursor: pointer; }
 .spacer { flex: 1; }
 .dash { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .bar2 { display: flex; align-items: center; gap: 12px; min-height: 26px; flex: none; }
@@ -388,7 +388,7 @@ window.tkData = function (data) {
     state.sess = keep.s === null ? null : at(D.sessions.findIndex((x) => x[1] === keep.s));
     state.proj = keep.p === null ? null : at(D.projects.indexOf(keep.p));
   }
-  for (const k of Object.keys(roveAt)) delete roveAt[k]; // remembered items are list positions from the old scan
+  for (const k of Object.keys(roveAt)) if (k !== "hourly") delete roveAt[k]; // remembered items are list positions from the old scan
   if (feId && feHost) {
     const i = feId[0] === "sess" ? D.sessions.findIndex((x) => x[1] === feId[1]) : feId[0] === "proj" ? D.projects.indexOf(feId[1]) : D.models.findIndex((m) => m.src + ":" + m.id === feId[1]);
     focusOverride = i < 0 ? null : `#${feHost.id} [data-${feId[0]}="${i}"]`;
@@ -427,7 +427,7 @@ function scanDone() {
 function showScanInfo() {
   const s = D.scan;
   const took = s.ms < 1000 ? Math.round(s.ms) + " ms" : (s.ms / 1000).toFixed(2) + " s";
-  $("#scaninfo").textContent = `${s.bytes >= 1e9 ? (s.bytes / 1e9).toFixed(2) + " GB" : Math.max(1, Math.round(s.bytes / 1e6)) + " MB"} scanned in ${took}`;
+  $("#scaninfo").textContent = `${s.bytes >= 1e9 ? (s.bytes / 1e9).toFixed(2) + " GB" : s.bytes >= 1e6 ? Math.round(s.bytes / 1e6) + " MB" : Math.round(s.bytes / 1e3) + " KB"} scanned in ${took}`;
   $("#scaninfo").title = `${fmtInt(s.files)} log files, ${fmtInt(s.events)} requests, ${fmtInt(s.parsed)} files read this scan${s.avx2 ? ", AVX2" : ""}`;
 }
 function selfCheck() {
@@ -489,14 +489,12 @@ function render() {
   const base = [state.src, state.range, state.metric, state.day, state.model, state.proj, state.sess, state.modelMode, state.projMode];
   // each list ignores its own selection, so clicking a row keeps the list where it was
   const own = { sessions: 6, projects: 5, models: 4 };
-  renderFilters();
-  renderKpis();
-  renderDaily();
-  renderModels();
-  renderHourly();
-  renderMix();
-  renderSessions();
-  renderProjects();
+  for (const [f, sel] of [[renderFilters], [renderKpis], [renderDaily, "#daily"], [renderModels, "#models"], [renderHourly, "#hourly"], [renderMix, "#mix"], [renderSessions, "#sessions"], [renderProjects, "#projects"]]) {
+    try { f(); } catch (err) {
+      if (window.ipc) window.ipc.postMessage("log:error " + f.name + ": " + (err && err.message));
+      if (sel) $(sel).innerHTML = `<div class="empty">Could not draw this card. Press Refresh to try again.</div>`;
+    }
+  }
   if (pricesFor !== D) { renderPrices(); pricesFor = D; }
   ignoreScrollUntil = performance.now() + 150; // restoring scroll fires scroll events; they must not hide the tooltip
   for (const [el, t] of scrolls) {
@@ -505,6 +503,7 @@ function render() {
   }
   if (fk && (document.activeElement === document.body || !document.activeElement)) { const el = document.querySelector(fk); if (el) el.focus({ preventScroll: true }); }
   hideAxisText();
+  document.querySelectorAll(".card .hd .sub").forEach((e) => { if (e.id !== "hourSub" && e.id !== "priceSub") e.title = e.textContent; });
   if (document.querySelector(".card.max")) placeMax();
   // Live redraws every 10 s; put the tooltip back if the mouse is still over a chart
   if (hadTip && lastMouse) { const el = document.elementFromPoint(lastMouse.clientX, lastMouse.clientY); if (el) moveTip({ target: el, clientX: lastMouse.clientX, clientY: lastMouse.clientY }); }
@@ -596,7 +595,7 @@ function renderKpis() {
     ["Cost per active day", fmtUsd(perDay), state.range === 1 ? "today only" : days.size === 1 && days.has(todayKey) ? "today so far, no full day yet" : prev && prev.cost > 0 && !prev.perDay && !noHistory ? "avg of days with use, not today" : delta(perDay, prev && prev.perDay, fmtUsd, fullDays < days.size ? "avg of days with use, not today" : "avg of days with use"), null],
     [saved < 0 ? "Cache cost" : "Cache saved", fmtUsd(Math.abs(saved)), saved < 0 ? "writes cost more than reads saved" : "est. at list price, after write cost", null, "Reads at the cache rate instead of full input, minus the extra paid to write caches. Base list prices; writes counted as 5-minute writes (1.25x input), so 1-hour writes (2x) would lower it."],
   ];
-  $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="${esc(l)}" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v${v.replace(/<[^>]*>/g, "").length > 6 ? " long" : ""}">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
+  $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="${esc(l)}" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v${v.replace(/<[^>]*>/g, "").length > 6 ? " long" : ""}">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div>${t ? spark(t) : ""}</div>`).join("");
   // say why a source is empty instead of showing a blank chart
   const notes = [];
   if (!D.rows.length) notes.push("No Claude Code or Codex logs found on this computer. JTokens reads ~/.claude/projects and ~/.codex/sessions.");
@@ -605,7 +604,7 @@ function renderKpis() {
     if (!last) { if (state.src !== "all") notes.push(`No ${SRC_NAME[src]} usage found on this computer.`); }
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
-  if ((noHistory || (rs && FD() && rs < FD())) && !state.day) notes.push(`Logs start ${dayLabel(FD())}: no earlier period to compare. Claude Code keeps 30 days unless cleanupPeriodDays is raised.`);
+  if ((noHistory || (rs && FD() && rs < FD())) && !state.day) notes.push(`Logs start ${dayLabel(FD())}: no earlier period to compare. ${state.src === "1" ? "Older Codex logs are no longer on disk." : "Claude Code keeps 30 days unless cleanupPeriodDays is raised."}`);
   if (scanFailed) notes.unshift("The last scan failed. These numbers are from the scan before it.");
   if (unpricedTok) notes.push(`${fmtTok(unpricedTok)} tokens from models with no public price are not in the cost.`);
   const txt = notes.join(" ");
@@ -640,7 +639,7 @@ function legendHtml(models) {
   for (const m of models) {
     const c = colorOf[m];
     if (c === "--other" && m !== state.model) { if (!seen.has("other")) { seen.add("other"); items.push(`<span><i style="background:var(--other)"></i>Other models</span>`); } continue; }
-    items.push(`<span data-model="${m}" tabindex="-1" role="button" aria-pressed="${state.model === m}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:${c === "--other" ? "var(--text-primary)" : `var(${c})`}"></i>${esc(D.models[m].name)}</span>`);
+    items.push(`<span data-model="${m}" tabindex="-1" role="button" aria-pressed="${state.model === m}" title="${esc(D.models[m].name)}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:${c === "--other" ? "var(--text-primary)" : `var(${c})`}"></i>${esc(D.models[m].name)}</span>`);
   }
   return items.join("");
 }
@@ -723,7 +722,7 @@ function renderDaily() {
     });
     if (i % labelEvery === 0) { const lx = L + i * slot + slot / 2, lw = 6.4 * dayLabel(b.from).length, end = lx + lw / 2 > W - 2; s += `<text x="${end ? W - 2 : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${dayLabel(b.from)}</text>`; }
     if (!running && totals[i] > 0 && slot >= Math.max(34, 8 + 6.4 * fmtVal(totals[i]).length)) s += `<text x="${L + i * slot + slot / 2}" y="${y(totals[i]) - 5}" text-anchor="middle" class="vl">${fmtVal(totals[i])}</text>`;
-    const a11y = ` tabindex="-1" role="${n > 1 ? "button" : "img"}"${n > 1 ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${fmtVal(tots[i])}${running || b.to === todayK ? " so far" : ""}"`;
+    const a11y = ` tabindex="-1" role="${n > 1 ? "button" : "img"}"${n > 1 ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${fmtVal(tots[i])}${running || b.to === todayK ? " so far" : ""}${segs.length > 1 ? ". " + esc(segs.slice().sort((p, q) => q[2] - p[2]).map(([m, , v]) => (m === -1 ? "Other models" : D.models[m].name) + " " + tipVal(v)).join(", ")) : ""}"`;
     s += `<rect class="hit"${n > 1 ? ` data-day="${b.from}" data-to="${b.to}"` : ""} data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
   let avg = 0;
@@ -879,7 +878,7 @@ function renderModelTrend() {
   const every = Math.ceil(n / Math.max(2, Math.floor(plotW / (hourly ? 34 : Math.max(58, 14 + 6.6 * Math.max(...slots.map((k) => dayLabel(k).length)))))));
   slots.forEach((k, i) => { if (i % every === 0) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="${n > 1 && i === n - 1 ? "end" : "middle"}">${label(i)}</text>`; });
   // the picked days, shaded like on the daily chart
-  if (!hourly && state.day) slots.forEach((k, i) => { if (inSpan(k)) s += `<rect class="selected-band" x="${n === 1 ? L : x(i) - plotW / Math.max(1, n - 1) / 2}" y="${T}" width="${n === 1 ? plotW : Math.max(2, plotW / Math.max(1, n - 1))}" height="${plotH}"/>`; });
+  if (!hourly && state.day) slots.forEach((k, i) => { if (inSpan(k)) { const hw = plotW / Math.max(1, n - 1) / 2, x0 = n === 1 ? L : Math.max(L, x(i) - hw), x1 = n === 1 ? L + plotW : Math.min(L + plotW, x(i) + hw); s += `<rect class="selected-band" x="${x0}" y="${T}" width="${Math.max(2, x1 - x0)}" height="${plotH}"/>`; } });
   // draw the biggest model last so it sits on top
   for (const m of [...order].reverse()) {
     const c = colorVar(m);
@@ -952,7 +951,7 @@ function renderHeat() {
   }
   const max = Math.max(...v);
   if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">${noUsage({}, "No usage.")}</div>`; return; }
-  if (heatFocus === null || !v[heatFocus]) heatFocus = v.indexOf(max);
+  if (heatFocus === null || (!v[heatFocus] && !(document.activeElement && document.activeElement.closest && document.activeElement.closest("#hourly")))) heatFocus = v.indexOf(max);
   const { W, H } = boxOf("#hourly"), L = 34, B = 20, T = 2;
   const cw = (W - L - 2) / 24, ch = Math.min((H - B - T - 24) / 7, cw * 2.4), gap = cw > 10 ? 2 : 1;
   const every = cw < 13 ? 6 : cw > 34 ? 2 : 3;
@@ -1012,7 +1011,7 @@ function renderSessions() {
   // keep the selected session visible even when it is outside the top 300, in its sorted place
   if (state.sess !== null && agg.has(state.sess) && !top.some((p) => p[0][0] === state.sess)) { top.push(ranked.find((p) => p[0][0] === state.sess)); top.sort(cmp); }
   const list = top.map((p) => p[0]);
-  if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; $("#sessSub").textContent = "No sessions match these filters"; return; }
+  if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; $("#sessSub").textContent = state.day || state.model !== null || state.proj !== null || state.src !== "all" ? "No sessions match these filters" : "No sessions yet"; return; }
   // the Tool column only helps when both tools are in the list
   const showTool = state.src === "all" && new Set(list.map(([si]) => D.sessions[si][0])).size > 1;
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
@@ -1060,7 +1059,7 @@ function renderProjMap(list) {
   const v = (a) => state.metric === "cost" ? a.cost : a.tok;
   let items = list.filter(([p, a]) => v(a) > 0 || p === state.proj).map(([p, a]) => ({ p, a, v: v(a) }));
   const unpricedN = list.filter(([p, a]) => v(a) <= 0 && p !== state.proj).length;
-  $("#projSub").textContent = unpricedN ? `Working folder, ${unpricedN} with no priced use not shown` : "Working folder";
+  $("#projSub").textContent = unpricedN ? `${unpricedN} unpriced not shown, working folder` : "Working folder";
   if (!items.length) { el.innerHTML = `<div class="empty">${list.length && state.metric === "cost" ? "No priced usage in these projects. Switch to Tokens to see them." : "No projects."}</div>`; return; }
   const total = items.reduce((s, it) => s + it.v, 0);
   if (!total && state.proj === null) { el.innerHTML = `<div class="empty">No priced usage in these projects. Switch to Tokens to see them.</div>`; return; }
@@ -1092,7 +1091,7 @@ function renderProjMap(list) {
     const name = it.p === null ? (w > 60 ? `${it.n} more` : `+${it.n}`) : baseName(D.projects[it.p]);
     const big = w > 60 && h > 34, small = w > 26 && h > 16;
     const tip = it.p === null ? `${it.n} smaller projects. Click to show them in the list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${it.a.priced ? colUsd(it.a.cost) : "no public price"}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
-    return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="-1" role="button" aria-pressed="${state.proj === it.p}" aria-label="${esc(tip.replace(/\n/g, ". "))}"` : ` data-more tabindex="-1" role="button" aria-label="${it.n} smaller projects: ${fmtVal(it.v)}. Shows them in the list."`} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
+    return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="-1" role="button" aria-pressed="${state.proj === it.p}" aria-label="${esc(tip.replace(/\n/g, ". "))}"` : ` data-more tabindex="-1" role="button" aria-label="${it.n} smaller projects: ${fmtVal(it.v)}. Shows them in the list."`} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${it.p !== null && state.metric === "cost" && !it.a.priced ? "n/a" : `${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%`}</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
   }).join("");
   rove("#projMap", ".tm[data-proj], .tm[data-more]");
 }
@@ -1345,7 +1344,7 @@ function expandCard(card) {
 // the open card starts under the filter line, so active filters stay visible
 function placeMax() {
   const st = document.documentElement.style, bar = $(".bar2").getBoundingClientRect();
-  st.setProperty("--max-top", Math.max(8, Math.ceil(bar.bottom + 8)) + "px");
+  st.setProperty("--max-top", Math.min(Math.max(8, Math.ceil(bar.bottom + 8)), Math.max(8, innerHeight - 240)) + "px"); // tall banners or filters: the card covers them rather than vanishing
   // line up with the filter line, so on very wide screens the card stays in the app column
   st.setProperty("--max-l", Math.max(8, Math.floor(bar.left)) + "px"); st.setProperty("--max-r", Math.max(8, Math.floor(innerWidth - bar.right)) + "px");
 }
@@ -1417,7 +1416,10 @@ function requestScan(manual) {
   // a manual Refresh shows that it is working; Live ticks stay quiet so the window does not flicker
   if (manual === true) { manualScan = true; $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Scanning…"; $("#scaninfo").setAttribute("aria-busy", "true"); }
   window.ipc.postMessage("scan");
+  const started = ++scanSeq;
+  if (manual === true) setTimeout(() => { if (scanning && scanSeq === started) $("#scaninfo").textContent = "Still scanning. Large or slow log folders can take a while."; }, 30000);
 }
+let scanSeq = 0;
 $("#refresh").addEventListener("click", () => requestScan(true));
 // Live skips ticks while the window is minimized and catches up when it comes back
 document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked) requestScan(); });
@@ -1448,11 +1450,13 @@ window.tkUpdate = function (u) {
   const box = $("#update"), ver = $("#appver");
   box.dataset.s = u.s === "downloading" && box.dataset.s === "downloading" ? "downloading" : "";
   const show = (html, problem) => { box.innerHTML = html; box.hidden = false; box.classList.toggle("is-problem", !!problem); };
+  const notesOpen = !!(box.querySelector("pre") && !box.querySelector("pre").hidden);
   if (u.s === "available") {
     show(`<span class="msg"><strong>JTokens ${esc(u.version)} is available.</strong> You have ${esc(u.current)}.</span>
       ${u.notes ? `<button class="btn" type="button" data-upd="notes" aria-expanded="false">What's new</button>` : `<a class="btn" href="${esc(u.page)}" data-open="${esc(u.page)}">What's new</a>`}
       <button class="btn btn-primary" type="button" data-upd="install">Install and restart</button>
       ${u.notes ? `<pre hidden>${esc(u.notes.replace(/\*\*/g, "").replace(/^- /gm, "• "))}</pre>` : ""}`);
+    if (notesOpen && box.querySelector("pre")) { box.querySelector("pre").hidden = false; const nb = box.querySelector('[data-upd="notes"]'); if (nb) nb.setAttribute("aria-expanded", "true"); }
   } else if (u.s === "downloading") {
     const pct = u.total ? Math.floor(100 * u.done / u.total) : 0;
     if (box.dataset.s === "downloading" && !box.hidden) { box.querySelector(".pct").textContent = pct + "%"; box.querySelector(".bar b").style.width = pct + "%"; box.querySelector(".bar").setAttribute("aria-valuenow", pct); }

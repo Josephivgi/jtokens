@@ -16,6 +16,7 @@
   --text-secondary: #c3c2b7;
   --text-muted: #8f8e86;
   --accent: #3987e5;
+  --accent-text: #6aa6ef;
   --focus: #86b6ef;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
   --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
@@ -36,6 +37,7 @@
   --text-secondary: #52514e;
   --text-muted: #69685f;
   --accent: #2a78d6;
+  --accent-text: #1c5cab; /* accent as text: 4.5:1 on light surfaces */
   --focus: #1c5cab;
   --s1: #2a78d6; --s2: #eb6834; --s3: #13875e; --s4: #b07800;
   --s5: #c7417a; --s6: #008300; --s7: #6250d6; --s8: #e34948;
@@ -65,7 +67,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 0; }
 .problems { color: var(--text-secondary); font-size: 12px; text-align: right; max-width: 55%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 10px; color: var(--text-primary); font-size: 12px; }
-.chip button { border: 0; background: none; cursor: pointer; color: var(--text-muted); padding: 4px 6px; margin: -4px -4px -4px 0; font-size: 14px; line-height: 1; border-radius: 4px; }
+.chip button { border: 0; background: none; cursor: pointer; color: var(--text-muted); min-width: 24px; min-height: 24px; padding: 4px 6px; margin: -4px -4px -4px 0; font-size: 14px; line-height: 1; border-radius: 4px; }
 .chip button:hover { color: var(--text-primary); }
 .filters .btn { padding: 2px 9px; font-size: 12px; }
 .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); flex: none; }
@@ -82,7 +84,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .card .hd { user-select: none; display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; }
 .card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; max-width: 100%; }
 .card .hd > .seg, .card .hd > .xp { flex: none; }
-.card .hd .sub { flex: 0 1 auto; }
+.card .hd .sub { flex: 0 100 auto; } /* the hint gives up its room before the title does */
 .card:not(.max) #trendLegend { flex-wrap: nowrap; overflow: hidden; }
 .card:not(.max) #trendLegend span { flex: none; white-space: nowrap; }
 .card .sub { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -110,7 +112,8 @@ svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
 .hbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; align-items: center; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
 .hbar:hover { background: var(--surface-2); }
 .hbar[aria-pressed="true"] { background: var(--surface-2); outline: 1px solid var(--border); }
-.hbar .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.hbar .n { overflow: hidden; white-space: nowrap; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hbar .n .nm, .mixrow .nm { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .hbar .n i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 .hbar .val { font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; }
 .hbar .track { grid-column: 1 / -1; height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
@@ -132,7 +135,7 @@ tbody tr { cursor: pointer; }
 tbody tr:hover td { background-color: var(--surface-2); }
 #priceTable tbody tr:hover td { background-color: transparent; }
 tbody tr[aria-selected="true"] td { background-color: var(--surface-2); }
-td.db { background-image: linear-gradient(to left, color-mix(in srgb, var(--accent) 75%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 16px) 2px; background-position: 8px calc(100% - 3px); }
+td.db { background-image: linear-gradient(to right, color-mix(in srgb, var(--accent) 22%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 8px) 4px; background-position: 4px calc(100% - 3px); }
 .drag-band { fill: var(--accent); opacity: .16; }
 .muted { color: var(--text-muted); }
 #tip { position: fixed; pointer-events: none; z-index: 50; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: none; max-width: 340px; }
@@ -141,7 +144,7 @@ td.db { background-image: linear-gradient(to left, color-mix(in srgb, var(--acce
 #tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 #tip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .note { color: var(--text-muted); font-size: 11px; margin-top: 6px; }
-a { color: var(--accent); }
+a { color: var(--accent-text); }
 .empty { color: var(--text-muted); display: flex; align-items: center; justify-content: center; padding: 16px 0; text-align: center; }
 .prices { flex: 1; min-height: 0; }
 .update { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--accent); border-radius: var(--radius); padding: 8px 12px; background: var(--surface-1); flex: none; }
@@ -154,17 +157,19 @@ a { color: var(--accent); }
 .update pre { flex-basis: 100%; margin: 0; white-space: pre-wrap; font: 12px/1.5 var(--font); color: var(--text-secondary); max-height: 220px; overflow: auto; border-top: 1px solid var(--grid); padding-top: 8px; }
 footer { flex: none; display: flex; gap: 12px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .appver { display: flex; gap: 8px; align-items: center; }
-.appver button { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-size: 11px; }
+.appver button { background: none; border: 0; padding: 0; color: var(--accent-text); cursor: pointer; font-size: 11px; }
 .appver button:disabled { color: var(--text-muted); cursor: default; }
 .seg.mini button { padding: 2px 8px; font-size: 11px; }
 .card .hd .spacer { flex: 1; }
-.xp { background: none; border: 1px solid transparent; border-radius: 6px; color: var(--text-muted); cursor: pointer; padding: 3px; display: inline-flex; line-height: 0; }
+.xp { background: none; border: 1px solid transparent; border-radius: 6px; color: var(--text-muted); cursor: pointer; padding: 4px; display: inline-flex; align-items: center; justify-content: center; line-height: 0; min-width: 24px; min-height: 24px; }
 .xp:hover { color: var(--text-primary); border-color: var(--border); background: var(--surface-2); }
 .btn.icon { padding: 4px 8px; line-height: 0; display: inline-flex; align-items: center; height: 29px; }
 body.has-max header, body.has-max .bar2, body.has-max .update { position: relative; z-index: 31; }
 .card.max { position: fixed; inset: var(--max-top, 0) var(--max-r, 16px) 12px var(--max-l, 16px); z-index: 30; padding: 14px 20px; box-shadow: 0 0 0 100vmax var(--surface-0); }
 .card.max .hd { margin-bottom: 10px; }
 .card.max h2 { font-size: 16px; }
+.card.max .tm b { font-size: 15px; }
+.card.max .tm span { font-size: 13px; }
 .card.max .sub { font-size: 12px; }
 .card.max .legend { font-size: 12px; gap: 4px 16px; margin-bottom: 8px; }
 .card.max svg text { font-size: 12px; }
@@ -190,7 +195,7 @@ html:has(body.has-max) { overflow: hidden; }
 svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600; }
 #tip .tsep { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
 /* small windows: stack the cards and let the page scroll */
-@media (max-width: 1050px), (max-height: 600px) {
+@media (max-width: 1050px), (max-height: 660px) {
   .app { height: auto; min-height: 100vh; }
   .board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: 280px; }
   #c-daily, #c-sessions { grid-column: 1 / -1; }
@@ -229,7 +234,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     <div class="tools">
     <label class="chk"><input type="checkbox" id="live"> Live</label>
     <button class="btn" id="refresh">Refresh</button>
-    <button class="btn" id="theme" title="Switch light or dark">Light theme</button>
+    <button class="btn icon" id="theme" title="Light theme" aria-label="Switch to light theme"></button>
     <button class="btn icon" id="fs" title="Full screen window (F11)" aria-label="Full screen window" aria-pressed="false"></button>
     </div>
   </header>
@@ -301,13 +306,13 @@ window.addEventListener("error", (e) => { if (window.ipc) window.ipc.postMessage
 const $ = (s) => document.querySelector(s);
 const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const SRC_NAME = ["Claude Code", "Codex"];
-const state = { src: "all", range: 30, metric: "cost", day: null, model: null, proj: null, sess: null, sort: "cost", sortDir: -1, sessCap: 300, projAll: false, dailyMode: "day", hourMode: "hours", modelMode: "list", projMode: "list" };
+const state = { src: "all", range: 30, metric: "cost", day: null, model: null, proj: null, sess: null, sort: "cost", sortDir: -1, sessCap: 300, projCap: 200, dailyMode: "day", hourMode: "hours", modelMode: "list", projMode: "list" };
 let D = null;            // data from the scanner
 let colorOf = [];
 let priceOf = [];        // model index -> its list price row, or null
 let dayOfHour = new Map();
 let rendered = false;
-let scanFailed = false, manualScan = false, scanning = false, renderedHour = 0;
+let scanFailed = false, manualScan = false, scanning = false, queuedManual = false, renderedHour = 0, overviewDirty = false;
 let pricesFor = null, focusOverride = null, lastMetric = "cost";
 
 // ---------- formatting
@@ -331,8 +336,8 @@ function tickFmt(ticks, v) {
 }
 // left margin wide enough for the longest axis label
 const axisL = (ticks) => Math.max(44, Math.ceil(12 + 6.6 * Math.max(...ticks.map((t) => tickFmt(ticks, t).length))));
-// a table column of costs uses whole dollars when its biggest value is $100 or more, so decimals line up
-const colUsd = (max) => max >= 100 ? (v) => v >= 1 ? "$" + Math.round(v).toLocaleString() : fmtUsd(v) : fmtUsd;
+// table cost cells: always cents, so decimal points line up and match tooltips
+const colUsd = () => (v) => v >= 0.005 ? "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v > 0 ? "<$0.01" : "$0.00";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const baseName = (p) => { const parts = p.split(/[\\/]/).filter(Boolean); return parts.length ? parts[parts.length - 1] : p; };
 
@@ -398,11 +403,14 @@ window.tkData = function (data) {
   }
 };
 
-function scanDone() { scanning = false; $("#refresh").disabled = false; $("#refresh").removeAttribute("aria-disabled"); }
+function scanDone() {
+  scanning = false; $("#refresh").disabled = false; $("#refresh").removeAttribute("aria-disabled");
+  if (queuedManual) { queuedManual = false; setTimeout(() => requestScan(true), 0); } // a Refresh pressed during a Live scan runs now
+}
 function showScanInfo() {
   const s = D.scan;
   const took = s.ms < 1000 ? Math.round(s.ms) + " ms" : (s.ms / 1000).toFixed(2) + " s";
-  $("#scaninfo").textContent = `${(s.bytes / 1e9).toFixed(2)} GB scanned in ${took}`;
+  $("#scaninfo").textContent = `${s.bytes >= 1e9 ? (s.bytes / 1e9).toFixed(2) + " GB" : Math.max(1, Math.round(s.bytes / 1e6)) + " MB"} scanned in ${took}`;
   $("#scaninfo").title = `${fmtInt(s.files)} log files, ${fmtInt(s.events)} requests, ${fmtInt(s.parsed)} files read this scan${s.avx2 ? ", AVX2" : ""}`;
 }
 function selfCheck() {
@@ -440,7 +448,7 @@ const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
 // selector for the focused item, so a redraw (Live refresh, filter) can put focus back
 function focusKey(el) {
   if (!el || !el.getAttribute) return null;
-  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi"]) {
+  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi", "data-showall"]) {
     if (el.hasAttribute(a)) { const host = el.closest("[id]"); return host ? `#${host.id} [${a}="${el.getAttribute(a)}"]` : null; }
   }
   return null;
@@ -448,6 +456,8 @@ function focusKey(el) {
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
+  if ($("#tab-overview").hidden) { overviewDirty = true; if (pricesFor !== D) { renderPrices(); pricesFor = D; } return; } // drawn when Overview comes back
+  overviewDirty = false;
   const fk = focusOverride || focusKey(document.activeElement); focusOverride = null;
   if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; } // Sessions follow Measure
   RS = rangeStart(); THIS_YEAR = new Date().getFullYear(); renderedHour = Math.floor(Date.now() / 3600000);
@@ -548,7 +558,8 @@ function renderKpis() {
     // with no earlier usage at all, say so once (on the first tile)
     if (!before) return prevEmpty && !first ? fallback : first && prev.tok ? `no priced usage in ${prevName}` : `no usage in ${prevName}`;
     const pct = (now - before) / before * 100, a = Math.abs(pct);
-    const arrow = a < 0.5 ? "" : pct > 0 ? "↑ " : "↓ ";
+    if (a < 0.05) return `<span class="dl" title="${prevName}: ${fmt(before)}">no change</span> vs ${prevName}`;
+    const arrow = pct > 0 ? "↑ " : "↓ ";
     return `<span class="dl" title="${prevName}: ${fmt(before)}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}`;
   };
   const tiles = [
@@ -765,12 +776,13 @@ function renderModels() {
   const list = [...agg.entries()].sort((a, b) => (state.metric === "cost" ? (b[1].cost - a[1].cost) || (b[1].tok - a[1].tok) : b[1].tok - a[1].tok));
   if (!list.length) { $("#models").innerHTML = `<div class="empty">No usage.</div>`; return; }
   const max = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
+  const bothTools = state.src === "all" && D.lastBySrc[0] > 0 && D.lastBySrc[1] > 0;
   $("#models").innerHTML = list.map(([m, a]) => {
     const md = D.models[m]; const v = state.metric === "cost" ? a.cost : a.tok;
     const c = ownSeries(m) ? colorVar(m) : "var(--other)";
     const right = state.metric === "cost" ? (md.priced ? fmtUsd(a.cost) : "no public price") : fmtTok(a.tok);
     return `<div class="hbar" data-model="${m}" role="button" aria-pressed="${state.model === m}" tabindex="-1">
-      <div class="n"><i style="background:${c}"></i>${esc(md.name)}<span class="muted">${SRC_NAME[md.src]}</span></div>
+      <div class="n"><i style="background:${c}"></i><span class="nm">${esc(md.name)}</span>${bothTools ? `<span class="muted">${SRC_NAME[md.src]}</span>` : ""}</div>
       <div class="val">${right}</div>
       <div class="track"><b style="width:${(v / max * 100).toFixed(2)}%;background:${c}"></b></div>
       <div class="meta">${fmtTok(a.tok)} tokens, ${fmtInt(a.reqs)} requests${md.name !== md.id ? ", id " + esc(md.id) : ""}</div>
@@ -818,7 +830,10 @@ function renderModelTrend() {
     // the small card has room for one line: the top names, then a count
     const all = topModelsFor(used), small = !card.classList.contains("max");
     const shown = small ? all.filter((m, i) => i < 3 || m === state.model) : all;
-    $("#trendLegend").innerHTML = legendHtml(shown) + (small && all.length > shown.length ? `<span class="muted">+${all.length - shown.length} more</span>` : "");
+    // count legend entries, not models: everything under Other is one entry
+    const entries = (l) => l.filter(ownSeries).length + (l.some((m) => !ownSeries(m)) ? 1 : 0), more = entries(all) - entries(shown);
+    const hiddenNames = all.filter((m) => !shown.includes(m)).map((m) => D.models[m].name).join(", ");
+    $("#trendLegend").innerHTML = legendHtml(shown) + (small && more > 0 ? `<span class="muted" title="${esc(hiddenNames)}">+${more} more</span>` : "");
     rove("#trendLegend", "[data-model]");
   }
   const max = Math.max(0, ...[...series.values()].flat());
@@ -838,14 +853,19 @@ function renderModelTrend() {
   // draw the biggest model last so it sits on top
   for (const m of [...order].reverse()) {
     const c = colorVar(m);
-    const pts = series.get(m).slice(0, upto).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const ptl = series.get(m).slice(0, upto).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+    // multi-day: the last point is today, which is not over, so that step is dashed
+    const partial = !hourly && keys[keys.length - 1] === dayKey(new Date()) && ptl.length > 1;
+    const pts = (partial ? ptl.slice(0, -1) : ptl).join(" ");
     const faded = state.model !== null && state.model !== m ? ' stroke-opacity="0.25"' : "";
     s += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-linejoin="round" stroke-linecap="round"${faded}/>`;
+    if (partial) s += `<polyline points="${ptl.slice(-2).join(" ")}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-dasharray="3 3" stroke-linecap="round"${faded || ' stroke-opacity="0.8"'}/>`;
     if (n <= 2) series.get(m).forEach((v, i) => { if (v > 0) s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${c}"${faded ? ' fill-opacity="0.25"' : ""}/>`; });
   }
   const rowsAt = (i) => order.map((m) => [m === -1 ? "Other models" : D.models[m].name, colorVar(m), series.get(m)[i]]).filter((r) => r[2] > 0);
   const slot = plotW / Math.max(1, n - 1);
   slots.forEach((k, i) => {
+    if (i >= upto) return; // hours that have not happened yet
     const a11y = ` tabindex="-1" role="img" aria-label="${esc(full(i))}: ${esc(rowsAt(i).map(([nm, , v]) => nm + " " + fmtVal(v)).join(", ") || "no usage")}"`;
     s += `<rect class="hit" data-i="${i}" x="${x(i) - slot / 2}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
@@ -888,6 +908,8 @@ function renderHourly() {
 
 // weekday x hour grid: when in the week the usage happens
 const WEEKDAY_NAMES = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
+// five even steps of the busiest cell, so the key reads directly
+const heatOp = (a) => !a ? 1 : [0.22, 0.4, 0.58, 0.78, 1][Math.min(4, Math.ceil(a * 5) - 1)];
 let heatFocus = null; // the one grid cell in the tab order; arrow keys move it
 function renderHeat() {
   const v = new Array(7 * 24).fill(0), days = new Array(7).fill(null).map(() => new Set());
@@ -904,10 +926,10 @@ function renderHeat() {
   const every = cw < 13 ? 6 : cw > 34 ? 2 : 3;
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="grid" aria-label="Usage by weekday and hour. Arrow keys move between cells.">`;
   for (let wd = 0; wd < 7; wd++) {
-    s += `<text x="${L - 6}" y="${T + wd * ch + ch / 2 + 4}" text-anchor="end">${WEEKDAYS[wd]}</text><g role="row">`;
+    s += `<text aria-hidden="true" x="${L - 6}" y="${T + wd * ch + ch / 2 + 4}" text-anchor="end">${WEEKDAYS[wd]}</text><g role="row">`;
     for (let h = 0; h < 24; h++) {
       const i = wd * 24 + h, x = L + h * cw, yy = T + wd * ch, a = v[i] / max;
-      s += `<rect x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${a ? (0.25 + 0.75 * Math.pow(a, 0.75)).toFixed(3) : 1}"/>`;
+      s += `<rect aria-hidden="true" x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${heatOp(a)}"/>`;
       s += `<rect class="hit" role="gridcell" data-i="${i}" x="${x}" y="${yy}" width="${cw}" height="${ch}" tabindex="${i === heatFocus ? 0 : -1}" aria-label="${WEEKDAYS[wd]} ${pad(h)}:00: ${fmtVal(v[i])}"/>`;
     }
     s += `</g>`;
@@ -916,9 +938,9 @@ function renderHeat() {
   {
     // a less-to-more key under the grid when there is room
     const ky = T + 7 * ch + 24, kx = Math.max(L + 30, W - 2 - 5 * 14 - 120);
-    s += `<text x="${kx - 6}" y="${ky + 10}" text-anchor="end">Less</text>`;
-    [0, .25, .5, .75, 1].forEach((a, i) => s += `<rect x="${kx + i * 14}" y="${ky}" width="12" height="12" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${a ? (0.25 + 0.75 * Math.pow(a, 0.75)).toFixed(3) : 1}"/>`);
-    s += `<text x="${kx + 5 * 14 + 4}" y="${ky + 10}">More (max ${fmtVal(max)})</text>`;
+    s += `<text aria-hidden="true" x="${kx - 20}" y="${ky + 10}" text-anchor="end">Less</text>`;
+    [0, .2, .4, .6, .8, 1].forEach((a, i) => s += `<rect aria-hidden="true" x="${kx + i * 14 - 14}" y="${ky}" width="12" height="12" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${heatOp(a)}"/>`);
+    s += `<text aria-hidden="true" x="${kx + 5 * 14 + 4}" y="${ky + 10}">More (max ${tickFmt([0, 1], max)})</text>`;
   }
   s += `</svg>`;
   $("#hourly").innerHTML = s;
@@ -937,7 +959,7 @@ function renderMix() {
   const names = ["Input (not cached)", "Output (incl. reasoning)", "Cache read", "Cache write"];
   const cols = ["--t-input", "--t-output", "--t-read", "--t-write"];
   $("#mix").innerHTML = `<div class="mix" role="img" aria-label="Token mix">${t.map((v, i) => v ? `<b style="width:${v / sum * 100}%;background:var(${cols[i]})" title="${names[i]}"></b>` : "").join("")}</div>
-    ${t.map((v, i) => `<div class="mixrow" title="${fmtInt(v)} tokens"><span><i style="background:var(${cols[i]})"></i>${names[i]}</span><span>${fmtTok(v)}</span><span class="muted">${v && v / sum < 0.0005 ? "<0.1" : (v / sum * 100).toFixed(1)}%</span></div>`).join("")}
+    ${t.map((v, i) => `<div class="mixrow" title="${fmtInt(v)} tokens"><span><i style="background:var(${cols[i]})"></i><span class="nm">${names[i]}</span></span><span>${fmtTok(v)}</span><span class="muted">${v && v / sum < 0.0005 ? "<0.1" : (v / sum * 100).toFixed(1)}%</span></div>`).join("")}
     <div class="note">Cache reads cost a small fraction of input, so huge token counts can cost little.</div>`;
 }
 
@@ -961,7 +983,7 @@ function renderSessions() {
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
   const usd = colUsd(maxCost);
   const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
-  const sortAttr = (k) => ` data-sort="${k}" tabindex="0" aria-sort="${state.sort === k ? (state.sortDir < 0 ? "descending" : "ascending") : "none"}"`;
+  const sortAttr = (k) => ` data-sort="${k}" tabindex="-1" aria-sort="${state.sort === k ? (state.sortDir < 0 ? "descending" : "ascending") : "none"}"`;
   $("#sessions").innerHTML = `<table role="grid" aria-label="Sessions"><thead><tr>
       <th${sortAttr("title")}>Session${arrow("title")}</th>${showTool ? "<th>Tool</th>" : ""}<th class="xcol">Project</th><th>Main model</th><th${sortAttr("start")}>Started${arrow("start")}</th><th class="xcol"${sortAttr("last")}>Last active${arrow("last")}</th>
       <th class="num"${sortAttr("reqs")}>Requests${arrow("reqs")}</th><th class="num"${sortAttr("tokens")}>Tokens${arrow("tokens")}</th><th class="num"${sortAttr("cost")}>API cost${arrow("cost")}</th></tr></thead><tbody>
@@ -975,7 +997,7 @@ function renderSessions() {
     }).join("")}
   </tbody></table>${agg.size > state.sessCap ? `<div class="note">Showing ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessMore">Show ${fmtInt(Math.min(300, agg.size - state.sessCap))} more</button>${state.sessCap > 300 ? ` <button class="btn" type="button" data-showall="sessTop">Show top 300</button>` : ""}</div>` : state.sessCap > 300 ? `<div class="note">Showing all ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessTop">Show top 300</button></div>` : ""}`;
   $("#sessSub").textContent = agg.size > state.sessCap ? `Top ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)}, click a row to filter` : "Click a row to filter, a column to sort";
-  rove("#sessions", "tbody tr");
+  rove("#sessions", "th[data-sort], tbody tr");
 }
 
 // squarified treemap: rectangles close to square, biggest first
@@ -1003,8 +1025,8 @@ function renderProjMap(list) {
   let items = list.filter(([, a]) => v(a) > 0).map(([p, a]) => ({ p, a, v: v(a) }));
   if (!items.length) { el.innerHTML = `<div class="empty">${list.length && state.metric === "cost" ? "No priced usage in these projects. Switch to Tokens to see them." : "No projects."}</div>`; return; }
   const total = items.reduce((s, it) => s + it.v, 0);
-  // fold the long tail into one box so every box can hold a label; the top 8 and the selected one always get a box
-  const keep = items.filter((it, i) => i < 8 || (i < 24 && it.v / total > 0.004) || it.p === state.proj);
+  // fold the long tail into one box so boxes can hold a label; the top 3 and the selected one always get a box
+  const keep = items.filter((it, i) => i < 3 || (i < 24 && it.v / total * W * H >= 34 * 18 * 2) || it.p === state.proj);
   const rest = items.filter((it) => !keep.includes(it));
   if (rest.length) keep.push({ p: null, v: rest.reduce((s, it) => s + it.v, 0), n: rest.length });
   keep.sort((x, y) => y.v - x.v);
@@ -1015,7 +1037,7 @@ function renderProjMap(list) {
     const strength = it.p === null ? 12 : Math.round(20 + 40 * Math.sqrt(it.v / top)); // capped so labels keep contrast
     const name = it.p === null ? `${it.n} more` : baseName(D.projects[it.p]);
     const big = w > 70 && h > 38, small = w > 34 && h > 18;
-    const tip = it.p === null ? `${it.n} smaller projects. Click for the full list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${fmtUsd(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
+    const tip = it.p === null ? `${it.n} smaller projects. Click for the full list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${colUsd()(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
     return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="-1" role="button" aria-pressed="${state.proj === it.p}" aria-label="${esc(tip.replace(/\n/g, ". "))}"` : ` data-more tabindex="-1" role="button" aria-label="${it.n} smaller projects: ${fmtVal(it.v)}. Opens the full list."`} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
   }).join("");
   rove("#projMap", ".tm[data-proj], .tm[data-more]");
@@ -1034,7 +1056,7 @@ function renderProjects() {
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.sess.add(r[1]);
   }
   const all = [...agg.entries()].sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok);
-  const list = all.slice(0, state.projAll ? Infinity : 200);
+  const list = all.slice(0, state.projCap);
   if (state.proj !== null && !list.some(([p]) => p === state.proj)) { const it = all.find(([p]) => p === state.proj); if (it) list.push(it); }
   const pmax = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
   const usd = colUsd(Math.max(0, ...list.map(([, a]) => a.cost)));
@@ -1044,18 +1066,21 @@ function renderProjects() {
   if (!list.length) { $("#projects").innerHTML = `<div class="empty">No projects.</div>`; return; }
   $("#projects").innerHTML = `<table role="grid" aria-label="Projects"><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">${state.metric === "cost" ? "API cost" : "Tokens"}</th></tr></thead><tbody>
     ${list.map(([p, a]) => `<tr data-proj="${p}" tabindex="-1" aria-description="${esc(D.projects[p])}" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}
-${fmtTok(a.tok)} tokens, ${fmtUsd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? usd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
-  </tbody></table>${all.length > 200 && !state.projAll ? `<div class="note">Top 200 of ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projAll">Show all</button></div>` : state.projAll && all.length > 200 ? `<div class="note">Showing all ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projAll">Show top 200</button></div>` : ""}`;
+${fmtTok(a.tok)} tokens, ${usd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? usd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
+  </tbody></table>${all.length > state.projCap ? `<div class="note">Showing ${fmtInt(state.projCap)} of ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projMore">Show ${fmtInt(Math.min(200, all.length - state.projCap))} more</button>${state.projCap > 200 ? ` <button class="btn" type="button" data-showall="projTop">Show top 200</button>` : ""}</div>` : state.projCap > 200 ? `<div class="note">Showing all ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projTop">Show top 200</button></div>` : ""}`;
   rove("#projects", "tbody tr");
 }
 
 function renderPrices() {
   $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`).join(" and ") + ".";
   const usedIds = new Set(D.models.map((m) => m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, "")));
-  const money = (v) => v ? "$" + (+v.toFixed(4)).toString() : "";
+  // each column uses the decimals its finest price needs, so the points line up
+  const decOf = (v) => { if (!v) return 0; let d = 0; while (d < 4 && Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) > 1e-9) d++; return d; };
+  const colDec = {}; for (const k of ["in", "w5", "w1h", "cr", "out"]) colDec[k] = Math.max(2, ...D.prices.map((p) => decOf(p[k])));
+  const money = (v, k) => v ? "$" + v.toFixed(k ? colDec[k] : Math.max(2, decOf(v))) : "";
   $("#priceTable").innerHTML = `<table><thead><tr><th>Model</th><th>ID</th><th class="num">Input</th><th class="num">Cache write 5m</th><th class="num">Cache write 1h</th><th class="num">Cache read</th><th class="num">Output</th><th>Long prompt</th><th>Fast mode</th><th>In your logs</th></tr></thead><tbody>
     ${D.prices.map((p) => `<tr style="cursor:default"><td>${esc(p.name)}</td><td class="muted" style="font-family:var(--mono)">${esc(p.id)}</td>
-      <td class="num">${money(p.in)}</td><td class="num">${money(p.w5)}</td><td class="num">${money(p.w1h)}</td><td class="num">${money(p.cr)}</td><td class="num">${money(p.out)}</td>
+      <td class="num">${money(p.in, "in")}</td><td class="num">${money(p.w5, "w5")}</td><td class="num">${money(p.w1h, "w1h")}</td><td class="num">${money(p.cr, "cr")}</td><td class="num">${money(p.out, "out")}</td>
       <td class="muted">${p.longOver ? `over ${fmtTok(p.longOver)}: ${money(p.lin)} in, ${money(p.lcr)} cached, ${money(p.lout)} out` : ""}</td>
       <td class="muted">${p.fin ? `${money(p.fin)} in, ${money(p.fout)} out` : ""}</td>
       <td>${usedIds.has(p.id) ? "Yes" : ""}</td></tr>`).join("")}
@@ -1070,7 +1095,7 @@ function rove(hostSel, itemSel) {
   const host = $(hostSel); host.dataset.rove = itemSel;
   const items = host.querySelectorAll(itemSel);
   if (!items.length) return;
-  const want = (roveAt[host.id] && host.querySelector(roveAt[host.id])) || host.querySelector(itemSel.split(",").map((x) => `${x.trim()}[aria-selected="true"], ${x.trim()}[aria-pressed="true"], ${x.trim()}.sel`).join(", ")) || items[0];
+  const want = (roveAt[host.id] && host.querySelector(roveAt[host.id])) || host.querySelector(itemSel.split(",").map((x) => `${x.trim()}[aria-selected="true"], ${x.trim()}[aria-pressed="true"], ${x.trim()}.sel`).join(", ")) || host.querySelector("tbody tr") || items[0];
   for (const el of items) el.tabIndex = el === want ? 0 : -1;
 }
 const tip = $("#tip");
@@ -1114,13 +1139,13 @@ document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.
 let swallowClick = false; // the click that ends a drag cancelled with Esc
 document.addEventListener("click", (e) => {
   const t = e.target;
-  if (swallowClick) { swallowClick = false; if (t.closest && t.closest("#daily")) return; }
+  if (swallowClick) { swallowClick = false; return; } // the click right after a mouseup the daily chart already handled
   const seg = t.closest(".seg button");
   if (seg) {
     const g = seg.parentElement.id;
     seg.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === seg));
-    if (g === "srcSeg") { state.src = seg.dataset.v; state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projAll = false; }
-    if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projAll = false; }
+    if (g === "srcSeg") { state.src = seg.dataset.v; state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
+    if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "metricSeg") state.metric = seg.dataset.v;
     if (g === "dailyMode") { state.dailyMode = seg.dataset.v; return renderDaily(); }
     if (g === "hourMode") { state.hourMode = seg.dataset.v; return renderHourly(); }
@@ -1134,6 +1159,7 @@ document.addEventListener("click", (e) => {
     tip.style.display = "none";
     if (tab.dataset.tab !== "overview" && document.querySelector(".card.max")) { expandCard(null); tab.focus(); }
     document.body.classList.toggle("on-prices", tab.dataset.tab === "prices");
+    if (tab.dataset.tab === "overview" && overviewDirty) { $("#tab-overview").hidden = false; render(); }
     $("#tab-overview").hidden = tab.dataset.tab !== "overview";
     $("#tab-prices").hidden = tab.dataset.tab !== "prices";
     return;
@@ -1163,12 +1189,12 @@ document.addEventListener("click", (e) => {
     // keep keyboard focus: on the first newly shown row, or back on a button
     if (k === "sessMore") { const first = state.sessCap + 1; state.sessCap += 300; renderSessions(); const r = $(`#sessions tbody tr:nth-child(${first})`); if (r) r.focus(); return; }
     if (k === "sessTop") { state.sessCap = 300; renderSessions(); const b = $("#sessions [data-showall]") || $("#sessions tbody tr"); if (b) b.focus(); return; }
-    const on = !state.projAll; state.projAll = on; renderProjects();
-    const next = on ? $("#projects tbody tr:nth-child(201)") : $("#projects [data-showall]"); if (next) next.focus();
+    if (k === "projMore") { const first = state.projCap + 1; state.projCap += 200; renderProjects(); const r = $(`#projects tbody tr:nth-child(${first})`); if (r) r.focus(); return; }
+    state.projCap = 200; renderProjects(); const b = $("#projects [data-showall]") || $("#projects tbody tr"); if (b) b.focus();
     return;
   }
   if (t.closest("[data-more]")) {
-    state.projMode = "list"; state.projAll = true;
+    state.projMode = "list"; state.projCap = Math.max(state.projCap, 400);
     $("#projMode").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === "list"));
     renderProjects(); const first = $("#projects tbody tr"); if (first && e.detail === 0) first.focus();
     return;
@@ -1208,7 +1234,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "F11") { e.preventDefault(); return setFullscreen(!isFullscreen); }
   if (e.key === "Escape") {
     if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; return; }
-    if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; }
+    if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; } // the mouse button is still down: eat the click that comes with its release
     if (document.querySelector(".card.max")) return expandCard(null);
     if (!$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
     if (isFullscreen) return setFullscreen(false);
@@ -1291,7 +1317,12 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("mouseup", () => {
   if (!drag) return;
   const d = drag; drag = null;
-  if (d.from === d.to) { if (d.pending) render(); return; } // a plain click: the click handler toggles that day
+  if (d.from === d.to) {
+    // a plain click: toggle the day here (a redraw may already have replaced the bar), and skip the click that follows
+    const k = d.from.dataset.day, k2 = d.from.dataset.to || k;
+    state.day = state.day && state.day[0] === k && state.day[1] === k2 ? null : [k, k2];
+    swallowClick = true; setTimeout(() => { swallowClick = false; }, 0); render(); return;
+  }
   const ks = [d.from.dataset.day, d.from.dataset.to, d.to.dataset.day, d.to.dataset.to].sort();
   state.day = [ks[0], ks[3]];
   render();
@@ -1299,7 +1330,8 @@ document.addEventListener("mouseup", () => {
 window.addEventListener("blur", () => { if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; if (p) render(); } });
 
 function requestScan(manual) {
-  if (!window.ipc || scanning) return;
+  if (!window.ipc) return;
+  if (scanning) { if (manual === true) { queuedManual = true; $("#refresh").setAttribute("aria-disabled", "true"); $("#scaninfo").textContent = "Scanning…"; } return; }
   scanning = true;
   if (manual === true) $("#refresh").setAttribute("aria-disabled", "true"); // aria-disabled keeps keyboard focus on it
   // a manual Refresh shows that it is working; Live ticks stay quiet so the window does not flicker
@@ -1314,7 +1346,13 @@ $("#live").addEventListener("change", (e) => {
   if (e.target.checked) { requestScan(); liveTimer = setInterval(requestScan, 10000); }
 });
 // theme is saved by the app (settings file), not in the page
-function applyTheme(t) { document.documentElement.dataset.theme = t; $("#theme").textContent = t === "light" ? "Dark theme" : "Light theme"; }
+const ICON_SUN = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+const ICON_MOON = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  const next = t === "light" ? "dark" : "light", b = $("#theme");
+  b.innerHTML = next === "light" ? ICON_SUN : ICON_MOON; b.title = next === "light" ? "Light theme" : "Dark theme"; b.setAttribute("aria-label", "Switch to " + next + " theme");
+}
 applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
 $("#theme").addEventListener("click", () => { const t = document.documentElement.dataset.theme === "light" ? "dark" : "light"; applyTheme(t); if (window.ipc) window.ipc.postMessage("theme:" + t); });
 
@@ -1335,8 +1373,8 @@ window.tkUpdate = function (u) {
       ${u.notes ? `<pre hidden>${esc(u.notes.replace(/\*\*/g, "").replace(/^- /gm, "• "))}</pre>` : ""}`);
   } else if (u.s === "downloading") {
     const pct = u.total ? Math.floor(100 * u.done / u.total) : 0;
-    if (box.dataset.s === "downloading" && !box.hidden) { box.querySelector(".pct").textContent = pct + "%"; box.querySelector(".bar b").style.width = pct + "%"; }
-    else show(`<span class="msg">Downloading the update: <span class="pct" aria-hidden="true">${pct}%</span></span><div class="bar" aria-hidden="true"><b style="width:${pct}%"></b></div>`);
+    if (box.dataset.s === "downloading" && !box.hidden) { box.querySelector(".pct").textContent = pct + "%"; box.querySelector(".bar b").style.width = pct + "%"; box.querySelector(".bar").setAttribute("aria-valuenow", pct); }
+    else show(`<span class="msg">Downloading the update: <span class="pct" aria-hidden="true">${pct}%</span></span><div class="bar" role="progressbar" aria-label="Update download" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><b style="width:${pct}%"></b></div>`);
   } else if (u.s === "restarting") {
     show(`<span class="msg">Update installed. JTokens is restarting.</span>`);
   } else if (u.s === "failed") {

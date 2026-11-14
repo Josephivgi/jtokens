@@ -746,7 +746,7 @@ function renderDaily() {
   const max = Math.max(...tots, 0);
   if (max <= 0) { $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; rove("#dailyLegend", "[data-model]"); $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4), L = axisL(ticks);
-  const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ((state.day ? "range avg " : "avg ") + fmtVal(max)).length)), plotW = W - L - R;
+  const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ((state.day ? "range avg " : "avg ").length + Math.max(6, fmtVal(max).length)))), plotW = W - L - R;
   const n = buckets.length, slot = plotW / n, bw = Math.max(1, Math.min(64, slot * (running ? 0.86 : 0.72)));
   const unit = step === 1 ? "day" : "week";
   const name = (b) => step === 1 ? dayLabel(b.from) : "Week of " + dayLabel(b.from);
@@ -783,7 +783,7 @@ function renderDaily() {
     const pick = n > 1 && (totals[i] > 0 || anyRow[i]); // unpriced-only days are still days with use
     const unpOnly = state.metric === "cost" && !totals[i] && unpTok[i] > 0;
     if (unpOnly && (!running || !cumTot[i])) s += `<rect x="${x}" y="${y(0) - 2}" width="${bw}" height="2" fill="var(--text-muted)"/>`; // a mark, so the day does not look empty
-    const a11y = ` tabindex="-1" role="${pick ? "button" : "img"}"${pick ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${unpOnly && !running ? `no priced usage, ${fmtTok(unpTok[i])} unpriced tokens` : tipVal(tots[i])}${running || b.to === todayK ? " so far" : ""}${unpOnly && running ? `; that ${unit}: no priced usage, ${fmtTok(unpTok[i])} unpriced tokens` : ""}${segs.length > 1 ? ". " + esc(segs.slice().sort((p, q) => q[2] - p[2]).map(([m, , v]) => (m === -1 ? "Other models" : D.models[m].name) + " " + tipVal(v)).join(", ")) : ""}"`;
+    const a11y = ` tabindex="-1" role="${pick ? "button" : "img"}"${pick ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${unpOnly && !running ? `no priced usage, ${fmtTok(unpTok[i])} unpriced tokens` : tipVal(tots[i])}${b.to === todayK ? " so far" : ""}${unpOnly && running ? `; that ${unit}: no priced usage, ${fmtTok(unpTok[i])} unpriced tokens` : ""}${segs.length > 1 ? ". " + esc(segs.slice().sort((p, q) => q[2] - p[2]).map(([m, , v]) => (m === -1 ? "Other models" : D.models[m].name) + " " + tipVal(v)).join(", ")) : ""}"`;
     s += `<rect class="hit"${pick ? ` data-day="${b.from}" data-to="${b.to}"` : n > 1 ? ` data-idle="${b.from}" data-idle-to="${b.to}"` : ""} data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
   let avg = 0;
@@ -803,7 +803,7 @@ function renderDaily() {
     const m = series[i];
     const rows = stackOrder.filter((k) => (m.get(k) || 0) > 0).map((k) => [k === -1 ? "Other models" : D.models[k].name, colorVar(k), m.get(k)]);
     const part = step === 7 && i === n - 1 && days.length % 7 ? " (partial week)" : "";
-    const head = running ? `${name(buckets[i])}${part}: ${tipVal(cumTot[i])} so far` : `${name(buckets[i])}${part}: ${tipVal(totals[i])}${buckets[i].to === dayKey(new Date()) ? " so far" : ""}`;
+    const head = running ? `${name(buckets[i])}${part}: ${tipVal(cumTot[i])}${buckets[i].to === dayKey(new Date()) ? " so far" : ""}` : `${name(buckets[i])}${part}: ${tipVal(totals[i])}${buckets[i].to === dayKey(new Date()) ? " so far" : ""}`;
     const foot = running ? `<div class="r tsep"><span>That ${unit}</span><span>${tipVal(totals[i])}</span></div>` : `<div class="r tsep"><span>Running total</span><span>${tipVal(cumTot[i])}</span></div>` + (avg ? `<div class="r"><span>Average per ${unit}, ${step === 7 ? "full weeks" : "idle days incl., today left out"}</span><span>${tipVal(avg)}</span></div>` : "");
     const unp = state.metric === "cost" && !totals[i] && unpTok[i] > 0 ? `<div class="r"><span>No priced usage</span><span>${fmtTok(unpTok[i])} unpriced tokens</span></div>` : "";
     return `<div class="h">${head}</div>` + unp + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${tipVal(v)}</span></div>`).join("") + foot;
@@ -943,7 +943,7 @@ function renderModelTrend() {
   const n = slots.length, x = (i) => L + (n === 1 ? plotW / 2 : i / (n - 1) * plotW);
   const top = ticks[ticks.length - 1], y = (v) => T + plotH - v / top * plotH;
   const label = (i) => hourly ? hourName(slots[i]) : dayLabel(slots[i]);
-  const full = (i) => hourly ? `${dayLabel(keys[0])} ${pad(slots[i])}:00${keys[0] === dayKey(new Date()) && slots[i] === new Date().getHours() ? " so far" : ""}` : dayLabel(slots[i]);
+  const full = (i) => hourly ? `${dayLabel(keys[0])} ${pad(slots[i])}:00${keys[0] === dayKey(new Date()) && slots[i] === new Date().getHours() ? " so far" : ""}` : dayLabel(slots[i]) + (slots[i] === dayKey(new Date()) ? " so far" : "");
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${state.metric === "cost" ? "API cost" : "Tokens"} per model ${hourly ? "per hour" : "per day"}. Arrow keys move between ${hourly ? "hours" : "days"}.">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   const every = Math.ceil(n / Math.max(2, Math.floor(plotW / (hourly ? 34 : Math.max(58, 14 + 6.6 * Math.max(...slots.map((k) => dayLabel(k).length)))))));
@@ -953,6 +953,7 @@ function renderModelTrend() {
   if (!hourly && state.day) slots.forEach((k, i) => { if (inSpan(k)) { const hw = plotW / Math.max(1, n - 1) / 2, x0 = n === 1 ? L : Math.max(L, x(i) - hw), x1 = n === 1 ? L + plotW : Math.min(L + plotW, x(i) + hw); s += `<rect class="selected-band" x="${x0}" y="${T}" width="${Math.max(2, x1 - x0)}" height="${plotH}"/>`; } });
   // draw the biggest model last so it sits on top
   for (const m of [...order].reverse()) {
+    if (!series.get(m).some((v) => v > 0)) continue; // a selected model with no use here stays in the legend only
     const c = colorVar(m);
     const ptl = series.get(m).slice(0, upto).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
     // multi-day: the last point is today, which is not over, so that step is dashed
@@ -1408,7 +1409,8 @@ document.addEventListener("keydown", (e) => {
     if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; return; }
     if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; } // the mouse button is still down: eat the click that comes with its release
     if (document.querySelector(".card.max")) return expandCard(null);
-    if (!$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { if (document.activeElement && document.activeElement.closest("#filters")) focusOverride = '#rangeSeg [aria-pressed="true"]'; Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
+    // Esc inside the update notes is not a filter reset
+    if (!(document.activeElement && document.activeElement.closest && document.activeElement.closest("#update")) && !$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { if (document.activeElement && document.activeElement.closest("#filters")) focusOverride = '#rangeSeg [aria-pressed="true"]'; Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
     if (isFullscreen) return setFullscreen(false);
   }
 });
@@ -1524,7 +1526,7 @@ function requestScan(manual) {
   if (manual === true) { manualScan = true; $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Scanning…"; }
   window.ipc.postMessage("scan");
   const started = ++scanSeq;
-  setTimeout(() => { if (scanning && scanSeq === started && (manual === true || queuedManual || !D)) $("#scaninfo").textContent = "Still scanning. Large or slow log folders can take a while."; }, 30000);
+  setTimeout(() => { if (scanning && scanSeq === started && (manual === true || queuedManual || !D)) { $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Still scanning. Large or slow log folders can take a while."; } }, 30000);
   setTimeout(() => { if (scanning && scanSeq === started && (manual === true || queuedManual || !D)) { $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Scan still running after a minute. If it never finishes, restart JTokens."; } }, 60000);
 }
 let scanSeq = 0, scanStartedAt = 0, lastNoteKey = null; // what the problems line was last set to
@@ -1552,8 +1554,9 @@ $("#theme").addEventListener("click", () => { const t = document.documentElement
 // ---------- updates (the app checks GitHub Releases; the page shows the result)
 // the app calls this when a scan crashed; keep the old numbers and say so
 window.tkScanError = function () {
-  scanFailed = true; manualScan = false; $("#scaninfo").setAttribute("aria-live", "polite"); scanDone(); $("#scaninfo").removeAttribute("aria-busy");
-  if (D) { render(); $("#scaninfo").textContent = "Scan failed, showing the last good scan"; } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; lastNoteKey = null; }
+  const again = scanFailed && !manualScan; scanFailed = true; manualScan = false; $("#scaninfo").setAttribute("aria-live", "polite"); scanDone(); $("#scaninfo").removeAttribute("aria-busy");
+  if (D) { if (!again) render(); if ($("#scaninfo").textContent !== "Scan failed, showing the last good scan") $("#scaninfo").textContent = "Scan failed, showing the last good scan"; } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; lastNoteKey = null; }
+  $("#scaninfo").title = "Details are in scan-error.txt in %LOCALAPPDATA%\\JTokens";
 };
 window.tkUpdate = function (u) {
   const box = $("#update"), ver = $("#appver");

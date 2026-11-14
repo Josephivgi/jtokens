@@ -294,6 +294,7 @@ fn walk_parallel(root: &Path) -> Vec<(PathBuf, u64, u64)> {
     std::thread::scope(|s| {
         for _ in 0..threads {
             s.spawn(|| {
+                IN_SCAN.with(|c| c.set(true)); // a panic here is caught by the scan, not shown in a box
                 let mut local = Vec::new();
                 loop {
                     let k = next.fetch_add(1, Ordering::Relaxed);
@@ -388,6 +389,7 @@ impl Scanner {
         std::thread::scope(|s| {
             for _ in 0..threads {
                 s.spawn(|| {
+                    IN_SCAN.with(|c| c.set(true));
                     let mut buf = Vec::new();
                     let mut recs = Vec::new();
                     let mut local = Vec::new();
@@ -727,7 +729,11 @@ fn main() {
     let value = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
     let quiet = flag("--serve") || flag("--smoke") || flag("--smoke-gui") || value("--export").is_some() || value("--json").is_some();
     if !quiet {
-        std::panic::set_hook(Box::new(|info| if !IN_SCAN.with(|c| c.get()) { error_box(&format!("JTokens stopped because of an error.
+        std::panic::set_hook(Box::new(|info| if IN_SCAN.with(|c| c.get()) {
+            // the page says "Scan failed"; keep the cause so it can be reported
+            let _ = fs::create_dir_all(data_dir());
+            let _ = fs::write(data_dir().join("scan-error.txt"), format!("JTokens {} scan failed:\n{info}\n", env!("CARGO_PKG_VERSION")));
+        } else { error_box(&format!("JTokens stopped because of an error.
 
 {info}")) }));
     }

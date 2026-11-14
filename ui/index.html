@@ -1164,7 +1164,7 @@ function renderProjects() {
   const list = all.slice(0, state.projCap);
   if (state.proj !== null && !list.some(([p]) => p === state.proj)) { const it = all.find(([p]) => p === state.proj); if (it) { list.push(it); list.sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok); } }
   const pmax = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
-  $("#projSub").textContent = all.length > state.projCap ? `Top ${fmtInt(state.projCap)} of ${fmtInt(all.length)}, working folder` : "Working folder";
+  $("#projSub").textContent = all.length > state.projCap ? `Top ${fmtInt(state.projCap)} of ${fmtInt(all.length)}` : "Working folder";
   const usd = colUsd;
   const map = state.projMode === "map";
   $("#projects").hidden = map; $("#projMap").hidden = !map;

@@ -147,7 +147,7 @@ tbody tr[aria-selected="true"] td { background-color: var(--surface-2); }
 td.db { background-image: linear-gradient(to right, color-mix(in srgb, var(--accent) 22%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 8px) 4px; background-position: 4px calc(100% - 3px); }
 .drag-band { fill: var(--accent); opacity: .16; }
 .muted { color: var(--text-muted); }
-#tip { max-height: calc(100vh - 16px); overflow: auto; position: fixed; pointer-events: none; z-index: 50; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: none; max-width: 340px; }
+#tip { max-height: calc(100vh - 16px); overflow: hidden; position: fixed; pointer-events: none; z-index: 50; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); display: none; max-width: 340px; }
 #tip .h { font-weight: 600; margin-bottom: 4px; }
 #tip .r { display: flex; justify-content: space-between; gap: 16px; }
 #tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
@@ -623,15 +623,15 @@ function renderKpis() {
   const prevEmpty = prev && !prev.tok && !prev.reqs;
   const delta = (now, before, fmt, fallback, first) => {
     if (!prev || (!now && !before)) return fallback;
-    if (!now && before && reqs > 0) return fallback; // everything so far is in the hour in progress, which is not compared yet
+    if (!now && before && reqsN > 0 && reqs === reqsN) return fallback; // everything so far is in the hour in progress, which is not compared yet
     if (noHistory) return fallback; // the problems line says why
     // with no earlier usage at all, say so once (on the first tile)
     if (!before) return prevEmpty && !first ? fallback : first && prev.tok ? `no priced usage in ${prevName}` : `no usage in ${prevName}`;
     const pct = (now - before) / before * 100, a = Math.abs(pct);
     const hov = `Complete hours only. Now: ${fmt(now)}. ${prevName[0].toUpperCase() + prevName.slice(1)}: ${fmt(before)}.`;
-    if (a < 0.05) return `<span class="dl" title="${hov}">no change</span> vs ${prevName}`;
+    if (a < 0.05) return `<span class="dl" title="${hov}">no change</span> vs ${prevName}<span class="sr">. ${hov}</span>`;
     const arrow = pct > 0 ? "↑ " : "↓ ";
-    return `<span class="dl" title="${hov}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}`;
+    return `<span class="dl" title="${hov}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}<span class="sr">. ${hov}</span>`;
   };
   const perDayCaption = () => {
     const plain = fullDays < days.size ? "avg of days with use, not today" : "avg of days with use";
@@ -657,7 +657,7 @@ function renderKpis() {
     if (!last) { if (state.src !== "all") notes.push(`No ${SRC_NAME[src]} usage found on this computer.`); }
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
-  if ((noHistory || (rs && FD() && rs < FD())) && !state.day) { notes.push(`Logs start ${dayLabel(FD())}: no earlier period to compare.`); why = (state.src === "all" ? FD() !== D.firstDayBySrc[0] : state.src === "1") ? "Older Codex logs are no longer on disk." : "Claude Code keeps 30 days of logs unless cleanupPeriodDays is raised."; }
+  if ((noHistory || (rs && FD() && rs < FD())) && !state.day) { notes.push(`Logs start ${dayLabel(FD())}: no earlier period to compare.`); why = (state.src === "all" ? FD() !== D.firstDayBySrc[0] : state.src === "1") ? "No earlier Codex logs are on disk." : "Claude Code keeps 30 days of logs unless cleanupPeriodDays is raised."; }
   if (scanFailed) notes.unshift("The last scan failed. These numbers are from the scan before it.");
   if (unpricedTok) notes.push(`${fmtTok(unpricedTok)} tokens from models with no public price are not in the cost.`);
   const txt = notes.join(" ");
@@ -746,7 +746,7 @@ function renderDaily() {
   const max = Math.max(...tots, 0);
   if (max <= 0) { $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; rove("#dailyLegend", "[data-model]"); $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4), L = axisL(ticks);
-  const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ("avg " + fmtVal(max)).length)), plotW = W - L - R;
+  const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ((state.day ? "range avg " : "avg ") + fmtVal(max)).length)), plotW = W - L - R;
   const n = buckets.length, slot = plotW / n, bw = Math.max(1, Math.min(64, slot * (running ? 0.86 : 0.72)));
   const unit = step === 1 ? "day" : "week";
   const name = (b) => step === 1 ? dayLabel(b.from) : "Week of " + dayLabel(b.from);
@@ -918,11 +918,13 @@ function renderModelTrend() {
     series.get(key)[i] += val(r); used.push(r);
     if (!D.models[r[0]].priced) unpricedBy[i] += r[3] + r[4] + r[5] + r[6];
   }
-  const order = topModelsFor(used).filter(ownSeries);
+  const topUsed = topModelsFor(used);
+  if (state.model !== null && !topUsed.includes(state.model)) { topUsed.push(state.model); if (!series.has(state.model)) series.set(state.model, new Array(slots.length).fill(0)); }
+  const order = topUsed.filter(ownSeries);
   if (series.has(-1) && series.get(-1).some((v) => v > 0)) order.push(-1);
   {
     // the small card has room for one line: the top names, then a count
-    const all = topModelsFor(used), small = !card.classList.contains("max");
+    const all = topUsed, small = !card.classList.contains("max");
     const shown = small ? all.filter((m, i) => i < 3 || m === state.model) : all;
     // count legend entries, not models: everything under Other is one entry
     // models drawn in the grey Other line are named too: either in the Other entry or in "+N more"
@@ -1050,7 +1052,7 @@ function renderHeat() {
     const ky = T + 7 * ch + 24, kx = Math.max(L + 30, W - 2 - 5 * 14 - 120);
     s += `<text aria-hidden="true" x="${kx - 20}" y="${ky + 10}" text-anchor="end">Less</text>`;
     [0, .2, .4, .6, .8, 1].forEach((a, i) => s += `<rect aria-hidden="true" x="${kx + i * 14 - 14}" y="${ky}" width="12" height="12" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${heatOp(a)}"/>`);
-    const mx = fmtVal(max).replace(/\.0(?=\D*$)/, ""), more = kx + 5 * 14 + 4 + 6.4 * ("More (max " + mx + ")").length <= W - 2 ? `More (max ${mx})` : "More";
+    const mx = tipVal(max), more = kx + 5 * 14 + 4 + 6.4 * ("More (max " + mx + ")").length <= W - 2 ? `More (max ${mx})` : "More";
     s += `<text aria-hidden="true" x="${kx + 5 * 14 + 4}" y="${ky + 10}">${more}</text>`;
   }
   s += `</svg>`;
@@ -1550,7 +1552,7 @@ $("#theme").addEventListener("click", () => { const t = document.documentElement
 // ---------- updates (the app checks GitHub Releases; the page shows the result)
 // the app calls this when a scan crashed; keep the old numbers and say so
 window.tkScanError = function () {
-  scanFailed = true; $("#scaninfo").setAttribute("aria-live", "polite"); scanDone(); $("#scaninfo").removeAttribute("aria-busy");
+  scanFailed = true; manualScan = false; $("#scaninfo").setAttribute("aria-live", "polite"); scanDone(); $("#scaninfo").removeAttribute("aria-busy");
   if (D) { render(); $("#scaninfo").textContent = "Scan failed, showing the last good scan"; } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; lastNoteKey = null; }
 };
 window.tkUpdate = function (u) {

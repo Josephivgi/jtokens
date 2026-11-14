@@ -702,7 +702,12 @@ const HELP: &str = "JTokens: Claude Code and Codex token usage and API cost
   jtokens --update [--no-launch]         install the newest release, then start it
   jtokens --version                      print the version";
 
-/// Shows an error box. The release build has no console and aborts on panic,
+thread_local! {
+    /// set on a scan thread: its panics are caught and shown in the page, not in a box
+    static IN_SCAN: std::cell::Cell<bool> = std::cell::Cell::new(false);
+}
+
+/// Shows an error box. The release build has no console,
 /// so without this a failure would close the app with no message.
 fn error_box(msg: &str) {
     #[link(name = "user32")]
@@ -722,9 +727,9 @@ fn main() {
     let value = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
     let quiet = flag("--serve") || flag("--smoke") || flag("--smoke-gui") || value("--export").is_some() || value("--json").is_some();
     if !quiet {
-        std::panic::set_hook(Box::new(|info| error_box(&format!("JTokens stopped because of an error.
+        std::panic::set_hook(Box::new(|info| if !IN_SCAN.with(|c| c.get()) { error_box(&format!("JTokens stopped because of an error.
 
-{info}"))));
+{info}")) }));
     }
 
     if flag("--version") || flag("-V") {
@@ -852,6 +857,7 @@ fn run_gui(smoke: bool, report: Option<String>) {
                 let busy = busy.clone();
                 std::thread::spawn(move || {
                     // a panic in one scan must not leave Refresh and Live stuck
+                    IN_SCAN.with(|c| c.set(true));
                     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let mut g = sc.lock().unwrap_or_else(|e| e.into_inner());
                         let (files, st) = g.scan();

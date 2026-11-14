@@ -58,7 +58,7 @@ header h1 { font-size: 15px; font-weight: 650; margin: 0 6px 0 0; letter-spacing
 .seg button:hover, .tabs button:hover { color: var(--text-primary); }
 .btn { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 11px; cursor: pointer; }
 .btn:hover { background: var(--surface-2); }
-.btn:disabled { opacity: .6; cursor: default; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .6; cursor: default; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--text-secondary); cursor: pointer; }
 .spacer { flex: 1; }
@@ -282,7 +282,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
 
   <section id="tab-prices" class="dash" role="tabpanel" aria-labelledby="tab-btn-prices" hidden>
     <div class="card prices">
-      <div class="hd"><h2>API list prices used for cost</h2><span class="sub" id="priceSub"></span></div>
+      <div class="hd"><h2 id="priceTitle">API list prices used for cost</h2><span class="sub" id="priceSub"></span></div>
       <div class="body">
         <div id="priceTable"></div>
         <div class="note">
@@ -317,9 +317,9 @@ let scanFailed = false, manualScan = false, scanning = false, queuedManual = fal
 let pricesFor = null, focusOverride = null, lastMetric = "cost";
 
 // ---------- formatting
-const fmtUsd = (v) => v < 0 ? "−" + fmtUsd(-v) : v >= 999.5 ? "$" + Math.round(v).toLocaleString() : v >= 99.995 ? "$" + v.toFixed(0) : v >= 0.9995 ? "$" + v.toFixed(2) : v >= 0.0005 ? "$" + v.toFixed(3) : v > 0 ? "<$0.001" : "$0";
+const fmtUsd = (v) => v < 0 ? "−" + fmtUsd(-v) : v >= 999.5 ? "$" + Math.round(v).toLocaleString("en-US") : v >= 99.995 ? "$" + v.toFixed(0) : v >= 0.9995 ? "$" + v.toFixed(2) : v >= 0.0005 ? "$" + v.toFixed(3) : v > 0 ? "<$0.001" : "$0";
 const fmtTok = (v) => v >= 999.95e6 ? (v / 1e9).toFixed(2) + "B" : v >= 999.95e3 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : String(Math.round(v));
-const fmtInt = (v) => v.toLocaleString();
+const fmtInt = (v) => v.toLocaleString("en-US");
 const fmtVal = (v) => state.metric === "cost" ? fmtUsd(v) : fmtTok(v);
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
@@ -335,12 +335,12 @@ function tickFmt(ticks, v) {
   if (state.metric !== "cost") return fmtTok(v).replace(/\.0+(?=[KMB]$)/, "");
   const st = ticks[1] - ticks[0];
   let dec = 0; while (dec < 10) { const x = st * 10 ** dec; if (Math.round(x) >= 1 && Math.abs(x - Math.round(x)) < 1e-6 * x) break; dec++; }
-  return "$" + v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 // left margin wide enough for the longest axis label
 const axisL = (ticks) => Math.max(44, Math.ceil(12 + 6.6 * Math.max(...ticks.map((t) => tickFmt(ticks, t).length))));
 // table cost cells: always cents, so decimal points line up and match tooltips
-const colUsd = (v) => v >= 0.005 ? "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v > 0 ? "<$0.01" : "$0.00";
+const colUsd = (v) => v >= 0.005 ? "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v > 0 ? "<$0.01" : "$0.00";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const baseName = (p) => { const parts = p.split(/[\\/]/).filter(Boolean); return parts.length ? parts[parts.length - 1] : p; };
 
@@ -384,6 +384,8 @@ window.tkData = function (data) {
     focusOverride = i < 0 ? null : `#${feHost.id} [data-${feId[0]}="${i}"]`;
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
+  const nameCount = new Map(); for (const m of D.models) nameCount.set(m.name, (nameCount.get(m.name) || 0) + 1);
+  for (const m of D.models) if (nameCount.get(m.name) > 1 && m.name !== m.id) m.name += " (" + m.id + ")";
   // fixed colors: top 8 models by all-time cost (tokens as tie-break) get slots, rest are Other
   const tot = new Map();
   for (const r of D.rows) { const t = tot.get(r[0]) || [0, 0]; t[0] += r[7]; t[1] += r[3] + r[4] + r[5] + r[6]; tot.set(r[0], t); }
@@ -582,7 +584,7 @@ function renderKpis() {
     ["Cost per active day", fmtUsd(perDay), state.range === 1 ? "one day in range" : delta(perDay, prev && prev.perDay, fmtUsd, fullDays < days.size ? "days with use, today left out" : "days with use only"), null],
     [saved < 0 ? "Cache cost" : "Cache saved", fmtUsd(Math.abs(saved)), saved < 0 ? "writes cost more than reads saved" : "est. at list price, after write cost", null, "Reads at the cache rate instead of full input, minus the extra paid to write caches. Base list prices; writes counted as 5-minute writes (1.25x input), so 1-hour writes (2x) would lower it."],
   ];
-  $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" data-kpi="${esc(l)}" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v${v.replace(/<[^>]*>/g, "").length > 6 ? " long" : ""}">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
+  $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="${esc(l)}" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v${v.replace(/<[^>]*>/g, "").length > 6 ? " long" : ""}">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
   // say why a source is empty instead of showing a blank chart
   const notes = [];
   if (!D.rows.length) notes.push("No Claude Code or Codex logs found on this computer. JTokens reads ~/.claude/projects and ~/.codex/sessions.");
@@ -591,7 +593,7 @@ function renderKpis() {
     if (!last) { if (state.src !== "all") notes.push(`No ${SRC_NAME[src]} usage found on this computer.`); }
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
-  if ((noHistory || (rs && D.firstDay && rs < D.firstDay)) && !state.day) notes.push(`Logs on this computer start ${dayLabel(D.firstDay)}, so there is ${rs < D.firstDay ? "no data before then and " : ""}no earlier period to compare.`);
+  if ((noHistory || (rs && D.firstDay && rs < D.firstDay)) && !state.day) notes.push(`Logs on this computer start ${dayLabel(D.firstDay)}, so there is ${rs < D.firstDay ? "no data before then and " : ""}no earlier period to compare. Claude Code keeps 30 days of logs unless cleanupPeriodDays is set higher.`);
   if (scanFailed) notes.unshift("The last scan failed. These numbers are from the scan before it.");
   if (unpricedTok) notes.push(`${fmtTok(unpricedTok)} tokens from models with no public price are not in the cost.`);
   const txt = notes.join(" ");
@@ -815,7 +817,7 @@ function renderModelTrend() {
   else {
     let min = null;
     for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { if (!min || r[9] < min) min = r[9]; }
-    if (!min) { $("#modelTrend").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true, ignoreModel: true }, "No usage.")}</div>`; $("#trendLegend").innerHTML = ""; return; }
+    if (!min) { $("#modelSub").textContent = "Per day"; $("#modelTrend").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true, ignoreModel: true }, "No usage.")}</div>`; $("#trendLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -895,6 +897,7 @@ function renderHourly() {
   if (!D) return;
   const week = state.hourMode === "week";
   $("#hourTitle").textContent = week ? "Week by hour" : "By hour";
+  { const b = $("#hourTitle").closest(".card").querySelector("[data-expand]"); if (b && b.dataset.what !== $("#hourTitle").textContent) { b.dataset.what = $("#hourTitle").textContent; b.setAttribute("aria-label", (b.closest(".card").classList.contains("max") ? "Close full screen: " : "Full screen: ") + b.dataset.what); } }
   $("#hourSub").textContent = state.day ? spanLabel() + ", local time" : week ? "Local time, totals" : "Local time";
   $("#hourSub").title = (state.day ? spanLabel() + ", local time" : "Local time, whole range") + (week ? ". Each cell is the total for that weekday and hour; stronger is more." : "");
   if (week) return renderHeat();
@@ -917,7 +920,7 @@ function renderHourly() {
   s += `</svg>`;
   $("#hourly").innerHTML = s;
   rove("#hourly", ".hit");
-  $("#hourly svg")._tip = (h) => `<div class="h">${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${fmtVal(vals[h])}</span></div>`;
+  $("#hourly svg")._tip = (h) => `<div class="h">${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${fmtVal(vals[h])}</span></div>`;
 }
 
 // weekday x hour grid: when in the week the usage happens
@@ -962,7 +965,7 @@ function renderHeat() {
   delete $("#hourly").dataset.rove; // the grid has its own two-way arrow keys
   $("#hourly svg")._tip = (i) => {
     const wd = Math.floor(i / 24), h = i % 24;
-    return `<div class="h">${WEEKDAYS[wd]} ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${fmtVal(v[i])}</span></div><div class="r"><span>${WEEKDAY_NAMES[wd]} with use</span><span>${days[wd].size}</span></div>`;
+    return `<div class="h">${WEEKDAYS[wd]} ${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${fmtVal(v[i])}</span></div><div class="r"><span>${WEEKDAY_NAMES[wd]} with use</span><span>${days[wd].size}</span></div>`;
   };
 }
 
@@ -994,7 +997,7 @@ function renderSessions() {
   // keep the selected session visible even when it is outside the top 300, in its sorted place
   if (state.sess !== null && agg.has(state.sess) && !top.some((p) => p[0][0] === state.sess)) { top.push(ranked.find((p) => p[0][0] === state.sess)); top.sort(cmp); }
   const list = top.map((p) => p[0]);
-  if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; return; }
+  if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; $("#sessSub").textContent = "No sessions match these filters"; return; }
   // the Tool column only helps when both tools are in the list
   const showTool = state.src === "all" && new Set(list.map(([si]) => D.sessions[si][0])).size > 1;
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
@@ -1073,7 +1076,7 @@ function renderProjects() {
     if (!passes(r, { ignoreProj: true })) continue;
     const p = D.sessions[r[1]][2];
     let a = agg.get(p); if (!a) { a = { cost: 0, tok: 0, sess: new Set() }; agg.set(p, a); }
-    a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.sess.add(r[1]);
+    a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.sess.add(r[1]); if (D.models[r[0]].priced) a.priced = true;
   }
   const all = [...agg.entries()].sort((a, b) => state.metric === "cost" ? b[1].cost - a[1].cost : b[1].tok - a[1].tok);
   const list = all.slice(0, state.projCap);
@@ -1086,7 +1089,7 @@ function renderProjects() {
   if (!list.length) { $("#projects").innerHTML = `<div class="empty">No projects.</div>`; return; }
   $("#projects").innerHTML = `<table role="grid" aria-label="Projects"><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">${state.metric === "cost" ? "API cost" : "Tokens"}</th></tr></thead><tbody>
     ${list.map(([p, a]) => `<tr data-proj="${p}" tabindex="-1" aria-description="${esc(D.projects[p])}" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}
-${fmtTok(a.tok)} tokens, ${usd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? usd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
+${fmtTok(a.tok)} tokens, ${a.priced ? usd(a.cost) : "no public price"}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? (a.priced ? usd(a.cost) : `<span class="muted" title="No public price for these models">n/a</span>`) : fmtTok(a.tok)}</td></tr>`).join("")}
   </tbody></table>${all.length > state.projCap ? `<div class="note">Showing ${fmtInt(state.projCap)} of ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projMore">Show ${fmtInt(Math.min(200, all.length - state.projCap))} more</button>${state.projCap > 200 ? ` <button class="btn" type="button" data-showall="projTop">Show top 200</button>` : ""}</div>` : state.projCap > 200 ? `<div class="note">Showing all ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projTop">Show top 200</button></div>` : ""}`;
   rove("#projects", "tbody tr");
 }
@@ -1098,7 +1101,7 @@ function renderPrices() {
   const decOf = (v) => { if (!v) return 0; let d = 0; while (d < 4 && Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) > 1e-9) d++; return d; };
   const colDec = {}; for (const k of ["in", "w5", "w1h", "cr", "out"]) colDec[k] = Math.max(2, ...D.prices.map((p) => decOf(p[k])));
   const money = (v, k) => v ? "$" + v.toFixed(k ? colDec[k] : Math.max(2, decOf(v))) : "";
-  $("#priceTable").innerHTML = `<table><thead><tr><th>Model</th><th>ID</th><th class="num">Input</th><th class="num">Cache write 5m</th><th class="num">Cache write 1h</th><th class="num">Cache read</th><th class="num">Output</th><th>Long prompt</th><th>Fast mode</th><th>In your logs</th></tr></thead><tbody>
+  $("#priceTable").innerHTML = `<table aria-labelledby="priceTitle"><thead><tr><th>Model</th><th>ID</th><th class="num">Input</th><th class="num">Cache write 5m</th><th class="num">Cache write 1h</th><th class="num">Cache read</th><th class="num">Output</th><th>Long prompt</th><th>Fast mode</th><th>In your logs</th></tr></thead><tbody>
     ${D.prices.map((p) => `<tr style="cursor:default"><td>${esc(p.name)}</td><td class="muted" style="font-family:var(--mono)">${esc(p.id)}</td>
       <td class="num">${money(p.in, "in")}</td><td class="num">${money(p.w5, "w5")}</td><td class="num">${money(p.w1h, "w1h")}</td><td class="num">${money(p.cr, "cr")}</td><td class="num">${money(p.out, "out")}</td>
       <td class="muted">${p.longOver ? `over ${fmtTok(p.longOver)}: ${money(p.lin)} in, ${money(p.lcr)} cached, ${money(p.lout)} out` : ""}</td>
@@ -1132,7 +1135,7 @@ function moveTip(e) {
   if (!hit) { tip.style.display = "none"; tipKey = null; return; }
   const svg = hit.ownerSVGElement;
   const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
-  if (!svg || !svg._tip) return;
+  if (!svg || !svg._tip || !svg.parentElement) return;
   const key = svg.parentElement.id + ":" + k;
   if (key !== tipKey) { tip.innerHTML = svg._tip(k); tipKey = key; }
   tip.style.display = "block";
@@ -1150,7 +1153,7 @@ document.addEventListener("focusin", (e) => {
   }
   const hit = e.target.closest && e.target.closest(".hit");
   const svg = hit && hit.ownerSVGElement;
-  if (!svg || !svg._tip || !hit.matches(":focus-visible")) return;
+  if (!svg || !svg._tip || !svg.parentElement || !hit.matches(":focus-visible")) return;
   const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
   tip.innerHTML = svg._tip(k); tipKey = svg.parentElement.id + ":" + k; tip.style.display = "block"; tipFromFocus = true;
   hit.setAttribute("aria-describedby", "tip");
@@ -1160,7 +1163,8 @@ document.addEventListener("focusin", (e) => {
   if (y + h > innerHeight - 8) y = innerHeight - h - 8;
   tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
 });
-document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".hit")) { tip.style.display = "none"; tipKey = null; } });
+document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".hit")) { tip.style.display = "none"; tipKey = null; e.target.removeAttribute("aria-describedby"); } });
+let lastSessTh = null;
 let swallowClick = false; // the click that ends a drag cancelled with Esc
 document.addEventListener("click", (e) => {
   const t = e.target;
@@ -1172,9 +1176,9 @@ document.addEventListener("click", (e) => {
     if (g === "srcSeg") { state.src = seg.dataset.v; state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "metricSeg") state.metric = seg.dataset.v;
-    if (g === "dailyMode") { state.dailyMode = seg.dataset.v; return renderDaily(); }
-    if (g === "hourMode") { state.hourMode = seg.dataset.v; return renderHourly(); }
-    if (g === "modelMode") { state.modelMode = seg.dataset.v; return renderModels(); }
+    if (g === "dailyMode") { state.dailyMode = seg.dataset.v; renderDaily(); return hideAxisText(); }
+    if (g === "hourMode") { state.hourMode = seg.dataset.v; renderHourly(); return hideAxisText(); }
+    if (g === "modelMode") { state.modelMode = seg.dataset.v; renderModels(); return hideAxisText(); }
     if (g === "projMode") { state.projMode = seg.dataset.v; return renderProjects(); }
     return render();
   }
@@ -1225,7 +1229,7 @@ document.addEventListener("click", (e) => {
     return;
   }
   const proj = t.closest("[data-proj]");
-  if (proj) { const p = +proj.dataset.proj, where = proj.closest("[id]").id; state.proj = state.proj === p ? null : p; state.sess = null; render(); return refocus(e, `#${where} [data-proj="${p}"]`); }
+  if (proj) { const p = +proj.dataset.proj, where = proj.closest("[id]").id; state.proj = state.proj === p ? null : p; if (state.sess !== null && D.sessions[state.sess][2] !== state.proj) state.sess = null; render(); return refocus(e, `#${where} [data-proj="${p}"]`); }
 });
 // a click from the keyboard (detail 0) puts focus back on the same item after the redraw
 function refocus(e, sel) { if (e.detail === 0) { const el = document.querySelector(sel); if (el) el.focus(); } }
@@ -1238,11 +1242,12 @@ document.addEventListener("keydown", (e) => {
     const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
     next.click(); next.focus(); return;
   }
-  if (e.key.startsWith("Arrow") && e.target.matches && e.target.matches('#hourly [role="gridcell"]')) {
+  if ((e.key.startsWith("Arrow") || ["Home", "End", "PageUp", "PageDown"].includes(e.key)) && e.target.matches && e.target.matches('#hourly [role="gridcell"]')) {
     e.preventDefault();
     const i = +e.target.dataset.i, wd = Math.floor(i / 24), h = i % 24;
-    const nh = e.key === "ArrowLeft" ? Math.max(0, h - 1) : e.key === "ArrowRight" ? Math.min(23, h + 1) : h;
-    const nw = e.key === "ArrowUp" ? Math.max(0, wd - 1) : e.key === "ArrowDown" ? Math.min(6, wd + 1) : wd;
+    // Home/End: start or end of the row (with Ctrl: first or last cell); PageUp/PageDown: top or bottom row
+    const nh = e.key === "ArrowLeft" ? Math.max(0, h - 1) : e.key === "ArrowRight" ? Math.min(23, h + 1) : e.key === "Home" ? 0 : e.key === "End" ? 23 : h;
+    const nw = e.key === "ArrowUp" ? Math.max(0, wd - 1) : e.key === "ArrowDown" ? Math.min(6, wd + 1) : e.key === "PageUp" || (e.key === "Home" && e.ctrlKey) ? 0 : e.key === "PageDown" || (e.key === "End" && e.ctrlKey) ? 6 : wd;
     const next = $(`#hourly [data-i="${nw * 24 + nh}"]`);
     if (next) { e.target.tabIndex = -1; next.tabIndex = 0; heatFocus = nw * 24 + nh; next.focus(); }
     return;
@@ -1250,7 +1255,20 @@ document.addEventListener("keydown", (e) => {
   const host = e.target.closest && e.target.closest("[data-rove]");
   if (host && e.target.matches(host.dataset.rove) && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
     e.preventDefault();
-    const items = [...host.querySelectorAll(host.dataset.rove)].filter((el) => el.getClientRects().length), i = items.indexOf(e.target);
+    let items = [...host.querySelectorAll(host.dataset.rove)].filter((el) => el.getClientRects().length);
+    if (host.id === "sessions") {
+      const ths = items.filter((el) => el.tagName === "TH"), rows = items.filter((el) => el.tagName === "TR");
+      if (e.target.tagName === "TH") {
+        if ((e.key === "ArrowDown" || e.key === "PageDown") && rows.length) { lastSessTh = e.target.dataset.sort; rows[0].focus(); return; }
+        if (e.key === "ArrowUp" || e.key === "PageUp") return;
+        items = ths;
+      } else {
+        if ((e.key === "ArrowUp" || e.key === "PageUp") && e.target === rows[0]) { const th = host.querySelector(`th[data-sort="${lastSessTh}"]`) || ths[0]; if (th) th.focus(); return; }
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") return;
+        items = rows;
+      }
+    }
+    const i = items.indexOf(e.target);
     const j = { ArrowUp: i - 1, ArrowLeft: i - 1, ArrowDown: i + 1, ArrowRight: i + 1, Home: 0, End: items.length - 1, PageUp: i - 10, PageDown: i + 10 }[e.key];
     const next = items[Math.max(0, Math.min(items.length - 1, j))];
     next.focus(); if (next.scrollIntoView) next.scrollIntoView({ block: "nearest" });
@@ -1389,7 +1407,7 @@ $("#theme").addEventListener("click", () => { const t = document.documentElement
 // the app calls this when a scan crashed; keep the old numbers and say so
 window.tkScanError = function () {
   scanFailed = true; scanDone(); $("#scaninfo").removeAttribute("aria-busy");
-  if (D) { showScanInfo(); render(); $("#scaninfo").textContent = "Scan failed, showing the last good scan"; } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; }
+  if (D) { render(); $("#scaninfo").textContent = "Scan failed, showing the last good scan"; } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; }
 };
 window.tkUpdate = function (u) {
   const box = $("#update"), ver = $("#appver");

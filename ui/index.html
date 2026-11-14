@@ -66,7 +66,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .bar2 { display: flex; align-items: center; gap: 12px; min-height: 26px; flex: none; }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 0; }
 .problems { color: var(--text-secondary); font-size: 12px; text-align: right; max-width: 55%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 10px; color: var(--text-primary); font-size: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 10px; color: var(--text-primary); font-size: 12px; max-width: 340px; min-width: 0; }
+.chip .ct { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .chip button { border: 0; background: none; cursor: pointer; color: var(--text-muted); min-width: 24px; min-height: 24px; padding: 4px 6px; margin: -4px -4px -4px 0; font-size: 14px; line-height: 1; border-radius: 4px; }
 .chip button:hover { color: var(--text-primary); }
 .filters .btn { padding: 2px 9px; font-size: 12px; }
@@ -96,7 +97,6 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .legend span[data-model] { cursor: pointer; }
 .legend span.off { opacity: .45; }
 .tm { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--accent) var(--k), var(--surface-1)); padding: 4px 6px; overflow: hidden; cursor: pointer; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.tm:not([data-proj]):not([data-more]) { cursor: default; }
 .tm:hover { outline: 1px solid var(--text-secondary); }
 .tm.sel { outline: 2px solid var(--text-primary); }
 .tm b { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-primary); }
@@ -157,7 +157,7 @@ a { color: var(--accent-text); }
 .update pre { flex-basis: 100%; margin: 0; white-space: pre-wrap; font: 12px/1.5 var(--font); color: var(--text-secondary); max-height: 220px; overflow: auto; border-top: 1px solid var(--grid); padding-top: 8px; }
 footer { flex: none; display: flex; gap: 12px; align-items: center; color: var(--text-muted); font-size: 11px; }
 .appver { display: flex; gap: 8px; align-items: center; }
-.appver button { background: none; border: 0; padding: 0; color: var(--accent-text); cursor: pointer; font-size: 11px; }
+.appver button { background: none; border: 0; padding: 0 4px; min-height: 24px; color: var(--accent-text); cursor: pointer; font-size: 11px; }
 .appver button:disabled { color: var(--text-muted); cursor: default; }
 .seg.mini button { padding: 2px 8px; font-size: 11px; min-height: 24px; }
 .card .hd .spacer { flex: 1; }
@@ -252,7 +252,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="chart" id="daily"></div>
       </div>
       <div class="card">
-        <div class="hd"><h2 id="hourTitle">By hour of day</h2><span class="sub" id="hourSub">Local time</span><span class="spacer"></span>
+        <div class="hd"><h2 id="hourTitle">By hour</h2><span class="sub" id="hourSub">Local time</span><span class="spacer"></span>
           <div class="seg mini" id="hourMode" role="group" aria-label="Hour chart view"><button data-v="hours" aria-pressed="true">Hours</button><button data-v="week">Week</button></div></div>
         <div class="chart" id="hourly"></div>
       </div>
@@ -312,6 +312,7 @@ let colorOf = [];
 let priceOf = [];        // model index -> its list price row, or null
 let dayOfHour = new Map();
 let rendered = false;
+const listKeys = new Map(); let ignoreScrollUntil = 0;
 let scanFailed = false, manualScan = false, scanning = false, queuedManual = false, renderedHour = 0, overviewDirty = false;
 let pricesFor = null, focusOverride = null, lastMetric = "cost";
 
@@ -455,6 +456,7 @@ function focusKey(el) {
   }
   return null;
 }
+const hideAxisText = () => document.querySelectorAll("#daily svg text, #hourly svg text, #modelTrend svg text").forEach((t) => t.setAttribute("aria-hidden", "true"));
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
@@ -470,6 +472,9 @@ function render() {
   $("#dailyTitle").textContent = state.metric === "cost" ? "Daily API cost by model" : "Daily tokens by model";
   // keep each list's scroll position across redraws (Live refreshes every 10 s)
   const scrolls = [...document.querySelectorAll(".card .body")].map((el) => [el, el.scrollTop]);
+  const base = [state.src, state.range, state.metric, state.day, state.model, state.proj, state.sess, state.modelMode, state.projMode];
+  // each list ignores its own selection, so clicking a row keeps the list where it was
+  const own = { sessions: 6, projects: 5, models: 4 };
   renderFilters();
   renderKpis();
   renderDaily();
@@ -479,8 +484,13 @@ function render() {
   renderSessions();
   renderProjects();
   if (pricesFor !== D) { renderPrices(); pricesFor = D; }
-  for (const [el, t] of scrolls) el.scrollTop = t;
+  ignoreScrollUntil = performance.now() + 150; // restoring scroll fires scroll events; they must not hide the tooltip
+  for (const [el, t] of scrolls) {
+    const box = el, k = JSON.stringify(base.map((v, i) => i === own[box.id] ? null : v));
+    el.scrollTop = listKeys.get(el) === undefined || listKeys.get(el) === k ? t : 0; listKeys.set(el, k);
+  }
   if (fk && (document.activeElement === document.body || !document.activeElement)) { const el = document.querySelector(fk); if (el) el.focus({ preventScroll: true }); }
+  hideAxisText();
   if (document.querySelector(".card.max")) placeMax();
   // Live redraws every 10 s; put the tooltip back if the mouse is still over a chart
   if (hadTip && lastMouse) { const el = document.elementFromPoint(lastMouse.clientX, lastMouse.clientY); if (el) moveTip({ target: el, clientX: lastMouse.clientX, clientY: lastMouse.clientY }); }
@@ -496,7 +506,7 @@ function renderFilters() {
   if (state.proj !== null) chips.push(["proj", "Project: " + baseName(D.projects[state.proj])]);
   if (state.sess !== null) { chips.push(["sess", "Session: " + sessTitle(state.sess)]); }
   $("#filters").innerHTML = chips.length
-    ? chips.map(([k, t]) => `<span class="chip">${esc(t)}<button data-clear="${k}" aria-label="Remove filter ${esc(t)}">×</button></span>`).join("") + (chips.length > 1 ? `<button class="btn" data-clear="all">Clear all</button>` : "")
+    ? chips.map(([k, t]) => `<span class="chip"><span class="ct" title="${esc(t)}">${esc(t)}</span><button data-clear="${k}" aria-label="Remove filter ${esc(t)}">×</button></span>`).join("") + (chips.length > 1 ? `<button class="btn" data-clear="all">Clear all</button>` : "")
     : "Click a day, model, session or project to filter. Esc clears.";
 }
 
@@ -652,8 +662,8 @@ function renderDaily() {
     const i = idx.get(r[9]); if (i === undefined) continue;
     const key = ownSeries(r[0]) ? r[0] : -1;
     per[i].set(key, (per[i].get(key) || 0) + val(r));
-    used.push(r);
   }
+  for (const r of D.rows) if (idx.has(r[9]) && passes(r, { ignoreDay: true, ignoreModel: true })) used.push(r);
   const models = topModelsFor(used);
   $("#dailyLegend").innerHTML = legendHtml(models); rove("#dailyLegend", "[data-model]");
   const stackOrder = models.filter(ownSeries); stackOrder.push(-1);
@@ -742,6 +752,7 @@ const chartResize = new ResizeObserver(() => {
     if (size("#hourly") !== drawnAt["#hourly"]) renderHourly();
     if (state.modelMode === "trend" && size("#modelTrend") !== drawnAt["#modelTrend"]) renderModelTrend();
     if (state.projMode === "map" && size("#projMap") !== drawnAt["#projMap"]) renderProjects();
+    hideAxisText();
     if (fk && (document.activeElement === document.body || !document.activeElement)) { const el = document.querySelector(fk); if (el) el.focus({ preventScroll: true }); }
   });
 });
@@ -778,7 +789,7 @@ function renderModels() {
   const list = [...agg.entries()].sort((a, b) => (state.metric === "cost" ? (b[1].cost - a[1].cost) || (b[1].tok - a[1].tok) : b[1].tok - a[1].tok));
   if (!list.length) { $("#models").innerHTML = `<div class="empty">No usage.</div>`; return; }
   const max = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
-  const bothTools = state.src === "all" && D.lastBySrc[0] > 0 && D.lastBySrc[1] > 0;
+  const bothTools = state.src === "all" && new Set(list.map(([m]) => D.models[m].src)).size > 1;
   $("#models").innerHTML = list.map(([m, a]) => {
     const md = D.models[m]; const v = state.metric === "cost" ? a.cost : a.tok;
     const c = ownSeries(m) ? colorVar(m) : "var(--other)";
@@ -787,7 +798,7 @@ function renderModels() {
       <div class="n"><i style="background:${c}"></i><span class="nm">${esc(md.name)}</span>${bothTools ? `<span class="muted">${SRC_NAME[md.src]}</span>` : ""}</div>
       <div class="val">${right}</div>
       <div class="track"><b style="width:${(v / max * 100).toFixed(2)}%;background:${c}"></b></div>
-      <div class="meta">${fmtTok(a.tok)} tokens, ${fmtInt(a.reqs)} requests${md.name !== md.id ? ", id " + esc(md.id) : ""}</div>
+      <div class="meta">${state.metric === "cost" ? fmtTok(a.tok) + " tokens" : md.priced ? colUsd(a.cost) : "no public price"}, ${fmtInt(a.reqs)} requests${md.name !== md.id ? ", id " + esc(md.id) : ""}</div>
     </div>`;
   }).join("");
   rove("#models", ".hbar");
@@ -884,7 +895,8 @@ function renderHourly() {
   if (!D) return;
   const week = state.hourMode === "week";
   $("#hourTitle").textContent = week ? "Week by hour" : "By hour";
-  $("#hourSub").textContent = (state.day ? spanLabel() + ", local time" : "Local time" + (week ? "" : ", whole range")) + (week ? ", total per hour, stronger is more" : "");
+  $("#hourSub").textContent = state.day ? spanLabel() + ", local time" : week ? "Local time, totals" : "Local time";
+  $("#hourSub").title = (state.day ? spanLabel() + ", local time" : "Local time, whole range") + (week ? ". Each cell is the total for that weekday and hour; stronger is more." : "");
   if (week) return renderHeat();
   const vals = new Array(24).fill(0);
   for (const r of D.rows) { if (passes(r)) vals[r[10]] += val(r); }
@@ -911,7 +923,7 @@ function renderHourly() {
 // weekday x hour grid: when in the week the usage happens
 const WEEKDAY_NAMES = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
 // five even steps of the busiest cell, so the key reads directly
-const heatOp = (a) => !a ? 1 : [0.22, 0.4, 0.58, 0.78, 1][Math.min(4, Math.ceil(a * 5) - 1)];
+const heatOp = (a) => !a ? 1 : [0.32, 0.48, 0.64, 0.82, 1][Math.min(4, Math.ceil(a * 5) - 1)];
 let heatFocus = null; // the one grid cell in the tab order; arrow keys move it
 function renderHeat() {
   const v = new Array(7 * 24).fill(0), days = new Array(7).fill(null).map(() => new Set());
@@ -974,7 +986,7 @@ function renderSessions() {
     let a = agg.get(r[1]);
     if (!a) { a = { cost: 0, tok: 0, reqs: 0, models: new Map() }; agg.set(r[1], a); }
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.reqs += r[8];
-    const tk = r[3] + r[4] + r[5] + r[6]; a.models.set(r[0], (a.models.get(r[0]) || 0) + (state.metric === "cost" ? r[7] + 1e-12 * tk : tk));
+    const mm = a.models.get(r[0]) || [0, 0]; mm[0] += r[7]; mm[1] += r[3] + r[4] + r[5] + r[6]; a.models.set(r[0], mm);
   }
   const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => D.sFirst[a[0]], last: (a) => D.sLast[a[0]], title: (a) => sessTitle(a[0]).toLowerCase() }[state.sort] || ((a) => a[1].cost);
   const cmp = (p, q) => (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) * state.sortDir;
@@ -984,7 +996,7 @@ function renderSessions() {
   const list = top.map((p) => p[0]);
   if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; return; }
   // the Tool column only helps when both tools are in the list
-  const showTool = state.src === "all" && D.lastBySrc[0] > 0 && D.lastBySrc[1] > 0;
+  const showTool = state.src === "all" && new Set(list.map(([si]) => D.sessions[si][0])).size > 1;
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
   const usd = colUsd;
   const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
@@ -994,11 +1006,12 @@ function renderSessions() {
       <th class="num"${sortAttr("reqs")}>Requests${arrow("reqs")}</th><th class="num"${sortAttr("tokens")}>Tokens${arrow("tokens")}</th><th class="num"${sortAttr("cost")}>API cost${arrow("cost")}</th></tr></thead><tbody>
     ${list.map(([si, a]) => {
       const s = D.sessions[si];
-      const main = [...a.models.entries()].sort((x, y) => y[1] - x[1])[0][0];
+      const main = [...a.models.entries()].sort((x, y) => state.metric === "cost" ? (y[1][0] - x[1][0]) || (y[1][1] - x[1][1]) : y[1][1] - x[1][1])[0][0];
+      const unpriced = a.cost === 0 && [...a.models.keys()].every((m) => !D.models[m].priced);
       const title = sessTitle(si);
       return `<tr data-sess="${si}" tabindex="-1" aria-selected="${state.sess === si}" aria-description="${esc(D.projects[s[2]])}" title="${esc(D.projects[s[2]])}\n${esc(s[1])}">
         <td class="wrap">${esc(title)}</td>${showTool ? `<td class="muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted">${esc(baseName(D.projects[s[2]]))}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
-        <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${usd(a.cost)}</td></tr>`;
+        <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${unpriced ? `<span class="muted" title="No public price for these models">n/a</span>` : usd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > state.sessCap ? `<div class="note">Showing ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessMore">Show ${fmtInt(Math.min(300, agg.size - state.sessCap))} more</button>${state.sessCap > 300 ? ` <button class="btn" type="button" data-showall="sessTop">Show top 300</button>` : ""}</div>` : state.sessCap > 300 ? `<div class="note">Showing all ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessTop">Show top 300</button></div>` : ""}`;
   $("#sessSub").textContent = agg.size > state.sessCap ? `Top ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)}, click a row to filter` : "Click a row to filter, a column to sort";
@@ -1034,8 +1047,10 @@ function renderProjMap(list) {
   const keep = items.filter((it, i) => i === 0 || (i < 24 && it.v / total * W * H >= 28 * 18 * 2) || it.p === state.proj);
   const rest = items.filter((it) => !keep.includes(it));
   if (rest.length) keep.push({ p: null, v: rest.reduce((s, it) => s + it.v, 0), n: rest.length });
-  keep.sort((x, y) => y.v - x.v);
-  const rects = squarify(keep.map((it) => it.v), 0, 0, W, H);
+  const minV = total * Math.max(30 * 20 / (W * H), 0.07); // at least 30x20 px and 7% of the map, so the tail box and a selected project can be seen (labels show the real share)
+  for (const it of keep) it.lv = it.p === null || it.p === state.proj ? Math.max(it.v, minV) : it.v;
+  keep.sort((x, y) => y.lv - x.lv);
+  const rects = squarify(keep.map((it) => it.lv), 0, 0, W, H);
   const top = Math.max(...keep.filter((it) => it.p !== null).map((it) => it.v));
   el.innerHTML = rects.map(([x, y, w, h], i) => {
     const it = keep[i], share = it.v / total * 100;
@@ -1101,14 +1116,16 @@ function rove(hostSel, itemSel) {
   const items = host.querySelectorAll(itemSel);
   if (!items.length) return;
   const want = (roveAt[host.id] && host.querySelector(roveAt[host.id])) || host.querySelector(itemSel.split(",").map((x) => `${x.trim()}[aria-selected="true"], ${x.trim()}[aria-pressed="true"], ${x.trim()}.sel`).join(", ")) || host.querySelector("tbody tr") || items[0];
-  for (const el of items) el.tabIndex = el === want ? 0 : -1;
+  const pick = want.getClientRects().length || !host.getClientRects().length ? want : [...items].find((el) => el.getClientRects().length) || want;
+  for (const el of items) el.tabIndex = el === pick ? 0 : -1;
 }
 const tip = $("#tip");
 let tipKey = null, lastMouse = null, tipFromFocus = false;
 document.addEventListener("mousemove", (e) => { lastMouse = { clientX: e.clientX, clientY: e.clientY }; moveTip(e); });
-const hideMouseTip = () => { if (!tipFromFocus) { tip.style.display = "none"; tipKey = null; lastMouse = null; } };
+const hideMouseTip = (e) => { if (e && e.type === "scroll" && performance.now() < ignoreScrollUntil) return; if (!tipFromFocus) { tip.style.display = "none"; tipKey = null; lastMouse = null; } };
 document.documentElement.addEventListener("mouseleave", hideMouseTip);
 document.addEventListener("scroll", hideMouseTip, true);
+window.addEventListener("blur", () => hideMouseTip());
 function moveTip(e) {
   const hit = e.target.closest && e.target.closest(".hit");
   tipFromFocus = false;
@@ -1188,7 +1205,7 @@ document.addEventListener("click", (e) => {
   const model = t.closest("[data-model]");
   if (model) { const m = +model.dataset.model, where = model.closest("[id]").id; state.model = state.model === m ? null : m; render(); return refocus(e, `#${where} [data-model="${m}"]`); }
   const sort = t.closest("[data-sort]");
-  if (sort) { const k = sort.dataset.sort; if (state.sort === k) state.sortDir *= -1; else { state.sort = k; state.sortDir = k === "title" ? 1 : -1; } renderSessions(); return refocus(e, `#sessions th[data-sort="${k}"]`); }
+  if (sort) { const k = sort.dataset.sort; if (state.sort === k) state.sortDir *= -1; else { state.sort = k; state.sortDir = k === "title" ? 1 : -1; } renderSessions(); $("#sessions").scrollTop = 0; return refocus(e, `#sessions th[data-sort="${k}"]`); }
   const sess = t.closest("[data-sess]");
   if (sess) { const s = +sess.dataset.sess; state.sess = state.sess === s ? null : s; render(); return refocus(e, `#sessions [data-sess="${s}"]`); }
   const all = t.closest("[data-showall]");
@@ -1269,6 +1286,7 @@ function expandCard(card) {
   if (!max && open) { window.scrollTo(0, pageScroll); open.querySelector("[data-expand]").focus({ preventScroll: true }); }
   // Last active only shows in full screen; do not leave the list sorted by a hidden column
   if (open && open.id === "c-sessions" && state.sort === "last" && open !== max) { state.sort = state.metric === "cost" ? "cost" : "tokens"; state.sortDir = -1; renderSessions(); }
+  if (open && open !== max) open.querySelectorAll("[data-rove]").forEach((h) => { const cur = h.querySelector('[tabindex="0"]'); if (cur && !cur.getClientRects().length) { delete roveAt[h.id]; rove("#" + h.id, h.dataset.rove); } });
   tip.style.display = "none";
 }
 // the open card starts under the filter line, so active filters stay visible
@@ -1281,7 +1299,7 @@ function placeMax() {
 window.addEventListener("resize", () => { if (document.querySelector(".card.max")) placeMax(); });
 new ResizeObserver(() => { if (document.querySelector(".card.max")) placeMax(); }).observe($(".bar2"));
 new ResizeObserver(() => { if (document.querySelector(".card.max")) placeMax(); }).observe($("#update"));
-document.addEventListener("click", (e) => { const b = e.target.closest("[data-expand]"); if (b) expandCard(b.closest(".card")); });
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-expand]"); if (b && e.detail <= 1) expandCard(b.closest(".card")); });
 document.addEventListener("dblclick", (e) => { const hd = e.target.closest(".board .card .hd"); if (hd && !e.target.closest("button")) expandCard(hd.closest(".card")); });
 let isFullscreen = false;
 function setFullscreen(on) {
@@ -1340,7 +1358,7 @@ window.addEventListener("blur", () => { if (drag) { const p = drag.pending; if (
 
 function requestScan(manual) {
   if (!window.ipc) return;
-  if (scanning) { if (manual === true) { queuedManual = true; $("#refresh").setAttribute("aria-disabled", "true"); $("#scaninfo").textContent = "Scanning…"; } return; }
+  if (scanning) { if (manual === true && !manualScan) { queuedManual = true; $("#refresh").setAttribute("aria-disabled", "true"); $("#scaninfo").textContent = "Scanning…"; } return; }
   scanning = true;
   if (manual === true) $("#refresh").setAttribute("aria-disabled", "true"); // aria-disabled keeps keyboard focus on it
   // a manual Refresh shows that it is working; Live ticks stay quiet so the window does not flicker
@@ -1348,11 +1366,13 @@ function requestScan(manual) {
   window.ipc.postMessage("scan");
 }
 $("#refresh").addEventListener("click", () => requestScan(true));
+// Live skips ticks while the window is minimized and catches up when it comes back
+document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked) requestScan(); });
 // the button is off only while the first scan runs; after that a scan in flight just ignores clicks
 let liveTimer = null;
 $("#live").addEventListener("change", (e) => {
   clearInterval(liveTimer);
-  if (e.target.checked) { requestScan(); liveTimer = setInterval(requestScan, 10000); }
+  if (e.target.checked) { requestScan(); liveTimer = setInterval(() => { if (!document.hidden) requestScan(); }, 10000); }
 });
 // theme is saved by the app (settings file), not in the page
 const ICON_SUN = `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
@@ -1369,7 +1389,7 @@ $("#theme").addEventListener("click", () => { const t = document.documentElement
 // the app calls this when a scan crashed; keep the old numbers and say so
 window.tkScanError = function () {
   scanFailed = true; scanDone(); $("#scaninfo").removeAttribute("aria-busy");
-  if (D) { showScanInfo(); render(); } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; }
+  if (D) { showScanInfo(); render(); $("#scaninfo").textContent = "Scan failed, showing the last good scan"; } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; }
 };
 window.tkUpdate = function (u) {
   const box = $("#update"), ver = $("#appver");

@@ -230,19 +230,19 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     </div>
     <div class="seg" id="srcSeg" role="group" aria-label="Source">
       <button data-v="all" aria-pressed="true">All</button>
-      <button data-v="0">Claude Code</button>
-      <button data-v="1">Codex</button>
+      <button data-v="0" aria-pressed="false">Claude Code</button>
+      <button data-v="1" aria-pressed="false">Codex</button>
     </div>
     <div class="seg" id="rangeSeg" role="group" aria-label="Date range">
-      <button data-v="1">Today</button>
-      <button data-v="7">7 days</button>
+      <button data-v="1" aria-pressed="false">Today</button>
+      <button data-v="7" aria-pressed="false">7 days</button>
       <button data-v="30" aria-pressed="true">30 days</button>
-      <button data-v="90">90 days</button>
-      <button data-v="0">All time</button>
+      <button data-v="90" aria-pressed="false">90 days</button>
+      <button data-v="0" aria-pressed="false">All time</button>
     </div>
     <div class="seg" id="metricSeg" role="group" aria-label="Measure">
       <button data-v="cost" aria-pressed="true">API cost</button>
-      <button data-v="tokens">Tokens</button>
+      <button data-v="tokens" aria-pressed="false">Tokens</button>
     </div>
     <div class="tools">
     <label class="chk"><input type="checkbox" id="live"> Live</label>
@@ -260,18 +260,18 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     <div class="board">
       <div class="card" id="c-daily">
         <div class="hd"><h2 id="dailyTitle">Daily API cost by model</h2><span class="sub" id="dailyHint">Click a day, or drag across days, to filter</span><span class="spacer"></span>
-          <div class="seg mini" id="dailyMode" role="group" aria-label="Daily chart view"><button data-v="day" aria-pressed="true">Per day</button><button data-v="total">Running total</button></div></div>
+          <div class="seg mini" id="dailyMode" role="group" aria-label="Daily chart view"><button data-v="day" aria-pressed="true">Per day</button><button data-v="total" aria-pressed="false">Running total</button></div></div>
         <div class="legend" id="dailyLegend"></div>
         <div class="chart" id="daily"></div>
       </div>
       <div class="card">
         <div class="hd"><h2 id="hourTitle">By hour</h2><span class="sub" id="hourSub">Local time</span><span class="spacer"></span>
-          <div class="seg mini" id="hourMode" role="group" aria-label="Hour chart view"><button data-v="hours" aria-pressed="true">Hours</button><button data-v="week">Week</button></div></div>
+          <div class="seg mini" id="hourMode" role="group" aria-label="Hour chart view"><button data-v="hours" aria-pressed="true">Hours</button><button data-v="week" aria-pressed="false">Week</button></div></div>
         <div class="chart" id="hourly"></div>
       </div>
       <div class="card">
         <div class="hd"><h2>By model</h2><span class="sub" id="modelSub">Click to filter</span><span class="spacer"></span>
-          <div class="seg mini" id="modelMode" role="group" aria-label="Model view"><button data-v="list" aria-pressed="true">List</button><button data-v="trend">Trend</button></div></div>
+          <div class="seg mini" id="modelMode" role="group" aria-label="Model view"><button data-v="list" aria-pressed="true">List</button><button data-v="trend" aria-pressed="false">Trend</button></div></div>
         <div class="body" id="models"></div>
         <div class="legend" id="trendLegend" hidden></div>
         <div class="chart" id="modelTrend" hidden></div>
@@ -282,7 +282,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
       </div>
       <div class="card">
         <div class="hd"><h2>Projects</h2><span class="sub" id="projSub">Working folder</span><span class="spacer"></span>
-          <div class="seg mini" id="projMode" role="group" aria-label="Project view"><button data-v="list" aria-pressed="true">List</button><button data-v="map">Map</button></div></div>
+          <div class="seg mini" id="projMode" role="group" aria-label="Project view"><button data-v="list" aria-pressed="true">List</button><button data-v="map" aria-pressed="false">Map</button></div></div>
         <div class="body" id="projects"></div>
         <div class="chart" id="projMap" hidden></div>
       </div>

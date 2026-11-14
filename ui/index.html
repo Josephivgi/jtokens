@@ -112,7 +112,8 @@ svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
 .hit { fill: transparent; }
 #daily .hit { cursor: pointer; }
 #daily .hit[data-idle], #daily .hit:not([data-day]) { cursor: default; }
-.hit:hover:not([data-idle]):not(#daily .hit:not([data-day])) { fill: var(--text-primary); fill-opacity: .06; }
+.hit:hover { fill: var(--text-primary); fill-opacity: .06; }
+#daily .hit:not([data-day]):hover { fill: transparent; } /* idle days and the single Today bar cannot be clicked */
 .hit:focus-visible { outline: none; stroke: var(--focus); stroke-width: 2; }
 @media (forced-colors: active) { .hit:focus-visible { stroke: Highlight; forced-color-adjust: none; } }
 .selected-band { fill: var(--text-primary); opacity: .07; }
@@ -710,7 +711,11 @@ function renderDaily() {
   else {
     let min = null;
     for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { if (!min || r[9] < min) min = r[9]; }
-    if (!min) { $("#dailyHint").textContent = ""; $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; $("#dailyLegend").innerHTML = ""; return; }
+    if (!min) {
+      const what = state.dailyMode === "total" ? "Running total chart" : "Daily chart", b = $("#dailyTitle").closest(".card").querySelector("[data-expand]");
+      $("#dailyTitle").textContent = (state.dailyMode === "total" ? "Running total " : "Daily ") + (state.metric === "cost" ? "API cost by model" : "tokens by model");
+      if (b && b.dataset.what !== what) { b.dataset.what = what; b.setAttribute("aria-label", (b.closest(".card").classList.contains("max") ? "Close full screen: " : "Full screen: ") + what); }
+      $("#dailyHint").textContent = ""; $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; $("#dailyLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
   const days = [];
@@ -756,7 +761,7 @@ function renderDaily() {
   const name = (b) => step === 1 ? dayLabel(b.from) : "Week of " + dayLabel(b.from);
   const sel = (b) => !!state.day && b.to >= state.day[0] && b.from <= state.day[1];
   const y = (v) => T + plotH - (v / ticks[ticks.length - 1]) * plotH;
-  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${running ? "Running total" : state.metric === "cost" ? "API cost" : "Tokens"} per ${unit}${running ? ", " + (state.metric === "cost" ? "API cost" : "tokens") : ""}. Arrow keys move between bars.">`;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${running ? "Running total" : state.metric === "cost" ? "API cost" : "Tokens"} per ${unit}${running ? ", " + (state.metric === "cost" ? "API cost" : "tokens") : ""}. ${n > 1 ? "Arrow keys move between bars." : ""}">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   const labelW = Math.max(58, 14 + 6.6 * Math.max(...buckets.map((b) => dayLabel(b.from).length)));
   const labelEvery = Math.ceil(n / Math.max(2, Math.floor(plotW / labelW)));
@@ -926,6 +931,7 @@ function renderModelTrend() {
   const topUsed = topModelsFor(used);
   if (state.model !== null && !topUsed.includes(state.model)) { topUsed.push(state.model); if (!series.has(state.model)) series.set(state.model, new Array(slots.length).fill(0)); }
   const order = topUsed.filter(ownSeries);
+  if (state.model !== null && !(state.metric === "cost" && !D.models[state.model].priced) && !(series.get(state.model) || []).some((v) => v > 0)) $("#modelSub").textContent = `${D.models[state.model].name}: no use here`;
   if (series.has(-1) && series.get(-1).some((v) => v > 0)) order.push(-1);
   {
     // the small card has room for one line: the top names, then a count
@@ -1223,7 +1229,10 @@ ${fmtTok(a.tok)} tokens, ${a.priced ? usd(a.cost) : "no public price"}"><td clas
   rove("#projects", "tbody tr");
 }
 
+let pricesKey = null;
 function renderPrices() {
+  const pk = JSON.stringify([D.pricesChecked, D.priceSources, D.prices, D.models.map((m) => [m.id, m.priced])]);
+  if (pk === pricesKey && $("#priceTable").innerHTML) return; pricesKey = pk;
   $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`).join(" and ") + "."; $("#priceSub").title = $("#priceSub").textContent;
   const usedIds = new Set(D.models.map((m) => m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, "")));
   // each column uses the decimals its finest price needs, so the points line up

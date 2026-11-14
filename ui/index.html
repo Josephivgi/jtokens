@@ -516,7 +516,7 @@ const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):n
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
-  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (pricesFor !== D) { try { renderPrices(); } catch (err) { $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; } return; } // drawn when Overview comes back
+  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (pricesFor !== D) { try { renderPrices(); } catch (err) { pricesKey = null; $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; } return; } // drawn when Overview comes back
   overviewDirty = false;
   const fk = focusOverride || focusKey(document.activeElement); focusOverride = null;
   if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; } // Sessions follow Measure
@@ -538,7 +538,7 @@ function render() {
       if (sel) $(typeof sel === "function" ? sel() : sel).innerHTML = `<div class="empty">Could not draw this ${sel === "#kpis" ? "summary" : sel === "#filters" ? "filter line" : "card"}. Press Refresh to try again.</div>`;
     }
   }
-  if (pricesFor !== D) { try { renderPrices(); } catch (err) { if (window.ipc) window.ipc.postMessage("log:error renderPrices: " + (err && err.message)); $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; }
+  if (pricesFor !== D) { try { renderPrices(); } catch (err) { if (window.ipc) window.ipc.postMessage("log:error renderPrices: " + (err && err.message)); pricesKey = null; $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; }
   ignoreScrollUntil = performance.now() + 150; // restoring scroll fires scroll events; they must not hide the tooltip
   for (const [el, t] of scrolls) {
     const box = el, k = JSON.stringify(base.map((v, i) => i === own[box.id] ? null : v));
@@ -715,7 +715,7 @@ function renderDaily() {
       const what = state.dailyMode === "total" ? "Running total chart" : "Daily chart", b = $("#dailyTitle").closest(".card").querySelector("[data-expand]");
       $("#dailyTitle").textContent = (state.dailyMode === "total" ? "Running total " : "Daily ") + (state.metric === "cost" ? "API cost by model" : "tokens by model");
       if (b && b.dataset.what !== what) { b.dataset.what = what; b.setAttribute("aria-label", (b.closest(".card").classList.contains("max") ? "Close full screen: " : "Full screen: ") + what); }
-      $("#dailyHint").textContent = ""; $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; $("#dailyLegend").innerHTML = ""; return; }
+      $("#dailyMode [data-v=day]").textContent = "Per day"; $("#dailyHint").textContent = ""; $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; $("#dailyLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
   const days = [];
@@ -753,7 +753,7 @@ function renderDaily() {
   const cumTot = cum.map((m) => [...m.values()].reduce((a, b) => a + b, 0));
   const series = running ? cum : per, tots = running ? cumTot : totals;
   const max = Math.max(...tots, 0);
-  if (max <= 0) { $("#dailyHint").textContent = ""; $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; rove("#dailyLegend", "[data-model]"); $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; return; }
+  if (max <= 0) { $("#dailyHint").textContent = ""; $("#dailyLegend").innerHTML = state.model !== null ? legendHtml([state.model]) : ""; rove("#dailyLegend", "[data-model]"); $("#daily").innerHTML = `<div class="empty">${state.metric === "cost" && anyRow.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({ ignoreDay: true }, state.model !== null ? `${esc(D.models[state.model].name)}: no use in this range.` : "No usage in this range.")}</div>`; return; }
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4), L = axisL(ticks);
   const R = running ? 8 : Math.max(64, Math.ceil(12 + 6.4 * ((state.day ? "range avg " : "avg ").length + Math.max(6, fmtVal(max).length)))), plotW = W - L - R;
   const n = buckets.length, slot = plotW / n, bw = Math.max(1, Math.min(64, slot * (running ? 0.86 : 0.72)));
@@ -761,7 +761,7 @@ function renderDaily() {
   const name = (b) => step === 1 ? dayLabel(b.from) : "Week of " + dayLabel(b.from);
   const sel = (b) => !!state.day && b.to >= state.day[0] && b.from <= state.day[1];
   const y = (v) => T + plotH - (v / ticks[ticks.length - 1]) * plotH;
-  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${running ? "Running total" : state.metric === "cost" ? "API cost" : "Tokens"} per ${unit}${running ? ", " + (state.metric === "cost" ? "API cost" : "tokens") : ""}. ${n > 1 ? "Arrow keys move between bars." : ""}">`;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${running ? "Running total" : state.metric === "cost" ? "API cost" : "Tokens"} per ${unit}${running ? ", " + (state.metric === "cost" ? "API cost" : "tokens") : ""}. ${n > 1 ? "Arrow keys move between bars; Enter picks one." : ""}">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   const labelW = Math.max(58, 14 + 6.6 * Math.max(...buckets.map((b) => dayLabel(b.from).length)));
   const labelEvery = Math.ceil(n / Math.max(2, Math.floor(plotW / labelW)));
@@ -1129,7 +1129,7 @@ function renderSessions() {
       const unpriced = a.cost === 0 && [...a.models.keys()].every((m) => !D.models[m].priced);
       const title = sessTitle(si);
       return `<tr data-sess="${si}" tabindex="-1" aria-selected="${state.sess === si}" aria-description="${esc((showTool ? SRC_NAME[s[0]] + ", " : "") + D.projects[s[2]])}" title="${esc((showTool ? SRC_NAME[s[0]] + "\n" : "") + D.projects[s[2]])}\n${esc(s[1])}">
-        <td class="wrap" title="${esc(title)}">${esc(title)}</td>${showTool ? `<td class="xcol muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted cut" title="${esc(projName(s[2]))}">${esc(projName(s[2]))}</td><td class="cut" title="${esc(D.models[main].name)}">${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
+        <td class="wrap" title="${esc(title + "\n" + D.projects[s[2]] + "\n" + s[1])}">${esc(title)}</td>${showTool ? `<td class="xcol muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted cut" title="${esc(projName(s[2]))}">${esc(projName(s[2]))}</td><td class="cut" title="${esc(D.models[main].name)}">${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
         <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${unpriced ? `<span class="muted" title="No public price for these models">n/a</span>` : usd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > state.sessCap ? `<div class="note">Showing ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessMore">Show ${fmtInt(Math.min(300, agg.size - state.sessCap))} more</button>${state.sessCap > 300 ? ` <button class="btn" type="button" data-showall="sessTop">Show top 300</button>` : ""}</div>` : state.sessCap > 300 ? `<div class="note">Showing all ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessTop">Show top 300</button></div>` : ""}`;
@@ -1327,6 +1327,7 @@ document.addEventListener("click", (e) => {
     if (g === "srcSeg") { state.src = seg.dataset.v; if (state.day && FD()) { if (state.day[1] < FD()) state.day = null; else if (state.day[0] < FD()) state.day = [FD(), state.day[1]]; } state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "metricSeg") state.metric = seg.dataset.v;
+    if (["dailyMode", "hourMode", "modelMode"].includes(g) && !tipFromFocus) { tip.style.display = "none"; tipKey = null; }
     if (g === "dailyMode") { state.dailyMode = seg.dataset.v; renderDaily(); return hideAxisText(); }
     if (g === "hourMode") { state.hourMode = seg.dataset.v; renderHourly(); return hideAxisText(); }
     if (g === "modelMode") { state.modelMode = seg.dataset.v; renderModels(); return hideAxisText(); }

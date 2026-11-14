@@ -35,7 +35,7 @@
   --grid: #e8e7e3;
   --text-primary: #0b0b0b;
   --text-secondary: #52514e;
-  --text-muted: #77766f;
+  --text-muted: #69685f;
   --accent: #2a78d6;
   --focus: #1c5cab;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
@@ -82,7 +82,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; max-width: 100%; }
 .card .hd > .seg, .card .hd > .xp { flex: none; }
 .card .hd .sub { flex: 0 1 auto; }
-.card:not(.max) #trendLegend { display: none; }
+.card:not(.max) #trendLegend { flex-wrap: nowrap; overflow: hidden; }
+.card:not(.max) #trendLegend span { flex: none; white-space: nowrap; }
 .card .sub { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .card .body { flex: 1; min-height: 0; overflow: auto; }
 .chart { flex: 1; min-height: 0; position: relative; overflow: hidden; }
@@ -107,7 +108,7 @@ svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
 .selected-band { fill: var(--text-primary); opacity: .07; }
 .hbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; align-items: center; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
 .hbar:hover { background: var(--surface-2); }
-.hbar[aria-selected="true"] { background: var(--surface-2); outline: 1px solid var(--border); }
+.hbar[aria-pressed="true"] { background: var(--surface-2); outline: 1px solid var(--border); }
 .hbar .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
 .hbar .n i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 .hbar .val { font-variant-numeric: tabular-nums; color: var(--text-primary); text-align: right; }
@@ -172,9 +173,12 @@ body.has-max header, body.has-max .bar2, body.has-max .update { position: relati
 svg text.avg-l { fill: var(--text-secondary); font-size: 11px; }
 svg tspan.avg-s { fill: var(--text-muted); font-size: 10px; }
 svg text.vl { fill: var(--text-secondary); font-size: 11px; }
-.kpi { position: relative; }
+.kpi { position: relative; container-type: inline-size; }
+@container (max-width: 200px) { .kpi .spark { display: none; } }
 .kpi .spark { position: absolute; right: 12px; top: 22px; }
 .kpi .dl { color: var(--text-secondary); font-weight: 600; }
+.avg, .avg-l, .vl, .callout, .selected-band { pointer-events: none; }
+.card .body :focus-visible, .chart :focus-visible { outline-offset: -2px; }
 svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600; }
 #tip .tsep { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
 /* small windows: stack the cards and let the page scroll */
@@ -195,8 +199,8 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
   <header>
     <h1>JTokens</h1>
     <div class="tabs" role="tablist" aria-label="View">
-      <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
-      <button role="tab" aria-selected="false" data-tab="prices">API prices</button>
+      <button role="tab" aria-selected="true" data-tab="overview" id="tab-btn-overview" aria-controls="tab-overview">Overview</button>
+      <button role="tab" aria-selected="false" data-tab="prices" id="tab-btn-prices" aria-controls="tab-prices" tabindex="-1">API prices</button>
     </div>
     <div class="seg" id="srcSeg" role="group" aria-label="Source">
       <button data-v="all" aria-pressed="true">All</button>
@@ -223,7 +227,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
 
   <div class="update" id="update" role="status" hidden></div>
 
-  <section id="tab-overview" class="dash">
+  <section id="tab-overview" class="dash" role="tabpanel" aria-labelledby="tab-btn-overview">
     <div class="bar2"><div class="filters" id="filters"></div><div class="problems" id="problems"></div></div>
     <div class="kpis" id="kpis"></div>
     <div class="board">
@@ -262,7 +266,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     </div>
   </section>
 
-  <section id="tab-prices" class="dash" hidden>
+  <section id="tab-prices" class="dash" role="tabpanel" aria-labelledby="tab-btn-prices" hidden>
     <div class="card prices">
       <div class="hd"><h2>API list prices used for cost</h2><span class="sub" id="priceSub"></span></div>
       <div class="body">
@@ -296,15 +300,23 @@ let dayOfHour = new Map();
 let rendered = false;
 
 // ---------- formatting
-const fmtUsd = (v) => v >= 1000 ? "$" + Math.round(v).toLocaleString() : v >= 100 ? "$" + v.toFixed(0) : v >= 1 ? "$" + v.toFixed(2) : v > 0 ? "$" + v.toFixed(3) : "$0";
+const fmtUsd = (v) => v < 0 ? "−" + fmtUsd(-v) : v >= 1000 ? "$" + Math.round(v).toLocaleString() : v >= 100 ? "$" + v.toFixed(0) : v >= 1 ? "$" + v.toFixed(2) : v > 0 ? "$" + v.toFixed(3) : "$0";
 const fmtTok = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "K" : String(v);
 const fmtInt = (v) => v.toLocaleString();
 const fmtVal = (v) => state.metric === "cost" ? fmtUsd(v) : fmtTok(v);
 const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
-const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: "short", day: "numeric" }); };
+// dates outside this year carry the year, so long histories stay unambiguous
+const THIS_YEAR = new Date().getFullYear();
+const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, y === THIS_YEAR ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" }); };
 // logs are bucketed by hour, so times show the hour only
-const dtLabel = (ts) => ts ? new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric" }) : "";
+const dtLabel = (ts) => { if (!ts) return ""; const d = new Date(ts * 1000); return d.toLocaleString(undefined, d.getFullYear() === THIS_YEAR ? { month: "short", day: "numeric", hour: "numeric" } : { year: "numeric", month: "short", day: "numeric", hour: "numeric" }); };
+// axis labels show only the decimals the tick step needs
+function tickFmt(ticks, v) {
+  if (state.metric !== "cost") return fmtTok(v);
+  const st = ticks[1] - ticks[0];
+  return "$" + (st >= 1 ? Math.round(v).toLocaleString() : v.toFixed(Math.min(3, Math.ceil(-Math.log10(st)))));
+}
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const baseName = (p) => { const parts = p.split(/[\\/]/).filter(Boolean); return parts.length ? parts[parts.length - 1] : p; };
 
@@ -313,7 +325,6 @@ function dayOf(hour) {
   if (k === undefined) { k = dayKey(new Date(hour * 3600000)); dayOfHour.set(hour, k); }
   return k;
 }
-function localHour(hour) { return new Date(hour * 3600000).getHours(); }
 
 // ---------- data intake
 window.tkData = function (data) {
@@ -335,14 +346,14 @@ window.tkData = function (data) {
     state.sess = keep.s === null ? null : at(D.sessions.findIndex((x) => x[1] === keep.s));
     state.proj = keep.p === null ? null : at(D.projects.indexOf(keep.p));
   }
-  // fixed colors: top models by all-time cost (tokens as tie-break) get slots, rest are Other
+  // fixed colors: top 8 models by all-time cost (tokens as tie-break) get slots, rest are Other
   const tot = new Map();
   for (const r of D.rows) { const t = tot.get(r[0]) || [0, 0]; t[0] += r[7]; t[1] += r[3] + r[4] + r[5] + r[6]; tot.set(r[0], t); }
   const order = [...tot.keys()].sort((a, b) => (tot.get(b)[0] - tot.get(a)[0]) || (tot.get(b)[1] - tot.get(a)[1]));
   colorOf = new Array(D.models.length).fill("--other");
   // list price row for each model, for the cache saved number
   priceOf = D.models.map((m) => { const id = m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, ""); return m.priced ? D.prices.find((p) => p.id === id) || null : null; });
-  order.slice(0, 7).forEach((m, i) => colorOf[m] = SLOTS[i]);
+  order.slice(0, 8).forEach((m, i) => colorOf[m] = SLOTS[i]);
   const s = D.scan;
   const took = s.ms < 1000 ? Math.round(s.ms) + " ms" : (s.ms / 1000).toFixed(2) + " s";
   $("#scaninfo").textContent = `${(s.bytes / 1e9).toFixed(2)} GB scanned in ${took}`;
@@ -381,7 +392,7 @@ function passes(r, opts = {}) {
   if (!opts.ignoreSess && state.sess !== null && r[1] !== state.sess) return false;
   if (!opts.ignoreProj && state.proj !== null && D.sessions[r[1]][2] !== state.proj) return false;
   const dk = r[9];
-  if (opts.win) return dk >= opts.win[0] && dk < opts.win[1];
+  if (opts.win) return r[2] >= opts.win[0] && r[2] < opts.win[1]; // hour window
   if (RS && dk < RS) return false;
   if (!opts.ignoreDay && state.day && (dk < state.day[0] || dk > state.day[1])) return false;
   return true;
@@ -389,10 +400,20 @@ function passes(r, opts = {}) {
 const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
 
 // ---------- render
+// selector for the focused item, so a redraw (Live refresh, filter) can put focus back
+function focusKey(el) {
+  if (!el || !el.getAttribute) return null;
+  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i"]) {
+    if (el.hasAttribute(a)) { const host = el.closest("[id]"); return host ? `#${host.id} [${a}="${el.getAttribute(a)}"]` : null; }
+  }
+  return null;
+}
 function render() {
   if (!D) return;
+  if (drag) { drag.pending = true; return; } // redraw after the drag ends
+  const fk = focusKey(document.activeElement);
   RS = rangeStart();
-  tipKey = null;
+  tipKey = null; tip.style.display = "none";
   // keep each list's scroll position across redraws (Live refreshes every 10 s)
   const scrolls = [...document.querySelectorAll(".card .body")].map((el) => [el, el.scrollTop]);
   renderFilters();
@@ -405,6 +426,8 @@ function render() {
   renderProjects();
   renderPrices();
   for (const [el, t] of scrolls) el.scrollTop = t;
+  if (fk && (document.activeElement === document.body || !document.activeElement)) { const el = document.querySelector(fk); if (el) el.focus({ preventScroll: true }); }
+  if (document.querySelector(".card.max")) placeMax();
   $("#dailyTitle").textContent = state.metric === "cost" ? "Daily API cost by model" : "Daily tokens by model";
 }
 
@@ -418,12 +441,12 @@ function renderFilters() {
   if (state.proj !== null) chips.push(["proj", "Project: " + baseName(D.projects[state.proj])]);
   if (state.sess !== null) { const s = D.sessions[state.sess]; chips.push(["sess", "Session: " + (s[3] || s[1].slice(0, 8))]); }
   $("#filters").innerHTML = chips.length
-    ? chips.map(([k, t]) => `<span class="chip">${esc(t)}<button data-clear="${k}" aria-label="Remove filter">×</button></span>`).join("") + (chips.length > 1 ? `<button class="btn" data-clear="all">Clear all</button>` : "")
+    ? chips.map(([k, t]) => `<span class="chip">${esc(t)}<button data-clear="${k}" aria-label="Remove filter ${esc(t)}">×</button></span>`).join("") + (chips.length > 1 ? `<button class="btn" data-clear="all">Clear all</button>` : "")
     : "Click any bar, model, session or project to filter. Esc clears.";
 }
 
 function renderKpis() {
-  let cost = 0, tok = 0, reqs = 0, unpricedTok = 0, saved = 0, readTok = 0;
+  let cost = 0, tok = 0, reqs = 0, unpricedTok = 0, saved = 0;
   const sess = new Set(), days = new Set();
   for (const r of D.rows) {
     if (!passes(r)) continue;
@@ -433,7 +456,7 @@ function renderKpis() {
     if (!D.models[r[0]].priced) unpricedTok += t;
     const pr = priceOf[r[0]];
     // reads cost less than input; writes cost more (Claude), so count both at base list price
-    if (pr) { saved += r[5] * (pr.in - pr.cr) / 1e6 - r[6] * ((pr.w5 || pr.in) - pr.in) / 1e6; readTok += r[5]; }
+    if (pr) { saved += r[5] * (pr.in - pr.cr) / 1e6 - r[6] * ((pr.w5 || pr.in) - pr.in) / 1e6; }
   }
   const perDay = days.size ? cost / days.size : 0;
   // the same numbers for the period just before this one, and a per-day trend
@@ -441,9 +464,10 @@ function renderKpis() {
   let prev = null, trend = null;
   if (rs && !state.day) {
     const [y, m, d] = rs.split("-").map(Number);
-    const from = new Date(y, m - 1, d - state.range);
+    // same length as the current window, which ends now (today is only partly over)
+    const startHour = Math.floor(new Date(y, m - 1, d).getTime() / 3600000), nowHour = Math.floor(Date.now() / 3600000);
     prev = { cost: 0, tok: 0, reqs: 0, days: new Set() };
-    const win = [dayKey(from), rs];
+    const win = [startHour - state.range * 24, nowHour + 1 - state.range * 24];
     for (const r of D.rows) {
       if (!passes(r, { win })) continue;
       prev.cost += r[7]; prev.tok += r[3] + r[4] + r[5] + r[6]; prev.reqs += r[8]; prev.days.add(r[9]);
@@ -461,10 +485,10 @@ function renderKpis() {
       trend.sess = trend.sess.map((x) => x.size);
     }
   }
-  const prevName = state.range === 1 ? "yesterday" : `prev ${state.range} days`;
+  const prevName = state.range === 1 ? "this time yesterday" : `prev ${state.range} days`;
   const delta = (now, before, fmt, fallback) => {
     if (!prev) return fallback;
-    if (!before) return fallback;
+    if (!before) return `no usage in ${prevName}`;
     const pct = (now - before) / before * 100, a = Math.abs(pct);
     const arrow = a < 0.5 ? "" : pct > 0 ? "↑ " : "↓ ";
     return `<span class="dl" title="${prevName}: ${fmt(before)}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}`;
@@ -474,15 +498,15 @@ function renderKpis() {
     ["Tokens", fmtTok(tok), delta(tok, prev && prev.tok, fmtTok, "input, output and cache"), trend && trend.tok],
     ["Requests", fmtInt(reqs), delta(reqs, prev && prev.reqs, fmtInt, "model calls"), trend && trend.reqs],
     ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`, trend && trend.sess],
-    ["Per active day", fmtUsd(perDay), delta(perDay, prev && prev.perDay, fmtUsd, "days with use only"), null],
-    ["Cache saved", fmtUsd(saved), `est. at list price, after write cost`, null],
+    ["Cost per active day", fmtUsd(perDay), delta(perDay, prev && prev.perDay, fmtUsd, "days with use only"), null],
+    [saved < 0 ? "Cache cost" : "Cache saved", fmtUsd(saved), saved < 0 ? "writes cost more than reads saved" : "est. at list price, after write cost", null, "Reads at the cache rate instead of full input, minus the extra paid to write caches. Base list prices; writes counted as 5-minute writes (1.25x input), so 1-hour writes (2x) would lower it."],
   ];
-  $("#kpis").innerHTML = tiles.map(([l, v, s, t]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
+  $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}"` : ""}><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div>${t ? spark(t) : ""}</div>`).join("");
   // say why a source is empty instead of showing a blank chart
   const notes = [];
   for (const src of state.src === "all" ? [0, 1] : [+state.src]) {
     const last = D.lastBySrc[src];
-    if (!last) notes.push(`No ${SRC_NAME[src]} usage found on this computer.`);
+    if (!last) { if (state.src !== "all") notes.push(`No ${SRC_NAME[src]} usage found on this computer.`); }
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
   if (unpricedTok) notes.push(`${fmtTok(unpricedTok)} tokens from models with no public price are not in the cost.`);
@@ -508,8 +532,8 @@ function legendHtml(models) {
   const seen = new Set(); const items = [];
   for (const m of models) {
     const c = colorOf[m];
-    if (c === "--other") { if (!seen.has("other")) { seen.add("other"); items.push(`<span><i style="background:var(--other)"></i>Other models</span>`); } continue; }
-    items.push(`<span data-model="${m}" tabindex="0" role="button" aria-pressed="${state.model === m}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:var(${c})"></i>${esc(D.models[m].name)}</span>`);
+    if (c === "--other" && m !== state.model) { if (!seen.has("other")) { seen.add("other"); items.push(`<span><i style="background:var(--other)"></i>Other models</span>`); } continue; }
+    items.push(`<span data-model="${m}" tabindex="0" role="button" aria-pressed="${state.model === m}"${state.model !== null && state.model !== m ? ' class="off"' : ""}><i style="background:${c === "--other" ? "var(--text-primary)" : `var(${c})`}"></i>${esc(D.models[m].name)}</span>`);
   }
   return items.join("");
 }
@@ -562,7 +586,7 @@ function renderDaily() {
   const ticks = niceTicks(max, plotH < 140 ? 3 : plotH > 360 ? 6 : 4);
   const y = (v) => T + plotH - (v / ticks[ticks.length - 1]) * plotH;
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${running ? "Running total" : "Usage"} per ${unit}">`;
-  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${fmtVal(t)}</text>`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   const labelEvery = Math.ceil(n / Math.max(2, Math.floor(plotW / 58)));
   buckets.forEach((b, i) => {
     const x = L + i * slot + (slot - bw) / 2;
@@ -590,16 +614,18 @@ function renderDaily() {
   if (running) {
     s += `<text x="${W - R}" y="${T + 12}" text-anchor="end" class="callout">${fmtVal(cumTot[n - 1])} total</text>`;
   } else {
-    // average per bar over the whole range, idle days included
-    const avg = totals.reduce((a, b) => a + b, 0) / n;
-    s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) - 2}" class="avg-l">avg ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}, all</tspan></text>`;
+    // average per bar over the whole range, idle days included (a partial last week is left out)
+    const full = step === 7 && days.length % 7 ? n - 1 : n;
+    const avg = full ? totals.slice(0, full).reduce((a, b) => a + b, 0) / full : 0;
+    if (n > 1 && full) s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) - 2}" class="avg-l">avg ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}, all</tspan></text>`;
   }
   s += `</svg>`;
   $("#daily").innerHTML = s;
   $("#daily svg")._tip = (i) => {
     const m = series[i];
     const rows = stackOrder.filter((k) => (m.get(k) || 0) > 0).map((k) => [k === -1 ? "Other models" : D.models[k].name, k === -1 ? "var(--other)" : `var(${colorOf[k]})`, m.get(k)]);
-    const head = running ? `${name(buckets[i])}: ${fmtVal(cumTot[i])} so far` : `${name(buckets[i])}: ${fmtVal(totals[i])}`;
+    const part = step === 7 && i === n - 1 && days.length % 7 ? " (partial week)" : "";
+    const head = running ? `${name(buckets[i])}${part}: ${fmtVal(cumTot[i])} so far` : `${name(buckets[i])}${part}: ${fmtVal(totals[i])}`;
     const foot = running ? `<div class="r tsep"><span>That ${unit}</span><span>${fmtVal(totals[i])}</span></div>` : `<div class="r tsep"><span>Running total</span><span>${fmtVal(cumTot[i])}</span></div>`;
     return `<div class="h">${head}</div>` + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("") + foot;
   };
@@ -662,7 +688,7 @@ function renderModels() {
     const md = D.models[m]; const v = state.metric === "cost" ? a.cost : a.tok;
     const c = `var(${colorOf[m]})`;
     const right = state.metric === "cost" ? (md.priced ? fmtUsd(a.cost) : "no public price") : fmtTok(a.tok);
-    return `<div class="hbar" data-model="${m}" aria-selected="${state.model === m}" tabindex="0">
+    return `<div class="hbar" data-model="${m}" role="button" aria-pressed="${state.model === m}" tabindex="0">
       <div class="n"><i style="background:${c}"></i>${esc(md.name)}<span class="muted">${SRC_NAME[md.src]}</span></div>
       <div class="val">${right}</div>
       <div class="track"><b style="width:${(v / max * 100).toFixed(2)}%;background:${c}"></b></div>
@@ -673,64 +699,78 @@ function renderModels() {
 
 const hourName = (h) => h === 0 ? "12a" : h < 12 ? h + "a" : h === 12 ? "12p" : (h - 12) + "p";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-// one line per model across the days in range
+// one line per model across the range (by hour when the range is a single day)
 function renderModelTrend() {
-  $("#modelSub").textContent = $("#modelTrend").closest(".card").classList.contains("max") ? "Per day, click a name to filter" : "Per day, hover for names";
-  const rs = RS; const keys = [];
+  const card = $("#modelTrend").closest(".card");
+  const keys = [];
   let start;
-  if (rs) { const [y, m, d] = rs.split("-").map(Number); start = new Date(y, m - 1, d); }
+  if (RS) { const [y, m, d] = RS.split("-").map(Number); start = new Date(y, m - 1, d); }
   else {
     let min = null;
-    for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { const k = r[9]; if (!min || k < min) min = k; }
+    for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { if (!min || r[9] < min) min = r[9]; }
     if (!min) { $("#modelTrend").innerHTML = `<div class="empty">No usage.</div>`; $("#trendLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);
   for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) keys.push(dayKey(d));
+  const hourly = keys.length === 1;
+  $("#modelSub").textContent = hourly ? "By hour" : card.classList.contains("max") ? "Per day, click a name to filter" : "Per day";
+  const slots = hourly ? Array.from({ length: 24 }, (_, h) => h) : keys;
   const at = new Map(keys.map((k, i) => [k, i]));
+  // a selected model keeps its own line even when it would fall under Other
+  const own = (m) => colorOf[m] !== "--other" || m === state.model;
   const series = new Map(); const used = [];
   for (const r of D.rows) {
     if (!passes(r, { ignoreDay: true, ignoreModel: true })) continue;
-    const i = at.get(r[9]); if (i === undefined) continue;
-    const key = colorOf[r[0]] === "--other" ? -1 : r[0];
-    if (!series.has(key)) series.set(key, new Array(keys.length).fill(0));
+    let i;
+    if (hourly) { if (r[9] !== keys[0]) continue; i = r[10]; }
+    else { i = at.get(r[9]); if (i === undefined) continue; }
+    const key = own(r[0]) ? r[0] : -1;
+    if (!series.has(key)) series.set(key, new Array(slots.length).fill(0));
     series.get(key)[i] += val(r); used.push(r);
   }
-  const order = topModelsFor(used).filter((m) => colorOf[m] !== "--other");
+  const order = topModelsFor(used).filter(own);
   if (series.has(-1)) order.push(-1);
+  const colorFor = (m) => m === -1 ? "var(--other)" : colorOf[m] === "--other" ? "var(--text-primary)" : `var(${colorOf[m]})`;
   $("#trendLegend").innerHTML = legendHtml(topModelsFor(used));
   const max = Math.max(0, ...[...series.values()].flat());
   if (max <= 0) { $("#modelTrend").innerHTML = `<div class="empty">No usage.</div>`; return; }
   const { W, H } = boxOf("#modelTrend"), L = 48, B = 22, T = 8, R = 8, plotW = W - L - R, plotH = H - B - T;
-  const n = keys.length, x = (i) => L + (n === 1 ? plotW / 2 : i / (n - 1) * plotW);
+  const n = slots.length, x = (i) => L + (n === 1 ? plotW / 2 : i / (n - 1) * plotW);
   const ticks = niceTicks(max, plotH > 300 ? 5 : 3), top = ticks[ticks.length - 1], y = (v) => T + plotH - v / top * plotH;
-  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Usage per model per day">`;
-  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${fmtVal(t)}</text>`;
-  const every = Math.ceil(n / Math.max(2, Math.floor(plotW / 58)));
-  keys.forEach((k, i) => { if (i % every === 0) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${dayLabel(k)}</text>`; });
+  const label = (i) => hourly ? hourName(slots[i]) : dayLabel(slots[i]);
+  const full = (i) => hourly ? `${dayLabel(keys[0])} ${pad(slots[i])}:00` : dayLabel(slots[i]);
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Usage per model ${hourly ? "per hour" : "per day"}">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
+  const every = Math.ceil(n / Math.max(2, Math.floor(plotW / (hourly ? 34 : 58))));
+  slots.forEach((k, i) => { if (i % every === 0) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${label(i)}</text>`; });
   // draw the biggest model last so it sits on top
   for (const m of [...order].reverse()) {
-    const c = m === -1 ? "var(--other)" : `var(${colorOf[m]})`;
+    const c = colorFor(m);
     const pts = series.get(m).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
     const faded = state.model !== null && state.model !== m ? ' stroke-opacity="0.25"' : "";
     s += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-linejoin="round" stroke-linecap="round"${faded}/>`;
-    // a line needs two points; show dots when the range is that short
     if (n <= 2) series.get(m).forEach((v, i) => { if (v > 0) s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${c}"${faded ? ' fill-opacity="0.25"' : ""}/>`; });
   }
+  const rowsAt = (i) => order.map((m) => [m === -1 ? "Other models" : D.models[m].name, colorFor(m), series.get(m)[i]]).filter((r) => r[2] > 0);
   const slot = plotW / Math.max(1, n - 1);
-  keys.forEach((k, i) => { s += `<rect class="hit" data-i="${i}" x="${x(i) - slot / 2}" y="${T}" width="${slot}" height="${plotH}"/>`; });
+  const focusable = n <= 120;
+  slots.forEach((k, i) => {
+    const a11y = focusable ? ` tabindex="0" aria-label="${esc(full(i))}: ${esc(rowsAt(i).map(([nm, , v]) => nm + " " + fmtVal(v)).join(", ") || "no usage")}"` : "";
+    s += `<rect class="hit" data-i="${i}" x="${x(i) - slot / 2}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
+  });
   s += `</svg>`;
   $("#modelTrend").innerHTML = s;
   $("#modelTrend svg")._tip = (i) => {
-    const rows = order.map((m) => [m === -1 ? "Other models" : D.models[m].name, m === -1 ? "var(--other)" : `var(${colorOf[m]})`, series.get(m)[i]]).filter((r) => r[2] > 0);
-    return `<div class="h">${dayLabel(keys[i])}</div>` + (rows.length ? rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("") : `<div class="r"><span>No usage</span></div>`);
+    const rows = rowsAt(i);
+    return `<div class="h">${full(i)}</div>` + (rows.length ? rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${fmtVal(v)}</span></div>`).join("") : `<div class="r"><span>No usage</span></div>`);
   };
 }
 
 function renderHourly() {
   const week = state.hourMode === "week";
   $("#hourTitle").textContent = week ? "Week by hour" : state.day ? "By hour, " + spanLabel() : "By hour of day";
-  $("#hourSub").textContent = week ? "Local time, darker is more" : state.day ? "Local time" : "Local time, whole range";
+  $("#hourSub").textContent = week ? "Local time, stronger color is more" : state.day ? "Local time" : "Local time, whole range";
   if (week) return renderHeat();
   const vals = new Array(24).fill(0);
   for (const r of D.rows) { if (passes(r)) vals[r[10]] += val(r); }
@@ -740,13 +780,13 @@ function renderHourly() {
   const ticks = niceTicks(max, plotH > 360 ? 5 : 3), top = ticks[ticks.length - 1];
   const slot = plotW / 24, bw = slot * 0.7, every = slot < 13 ? 6 : slot > 40 ? 1 : slot > 24 ? 2 : 3;
   const y = (v) => T + plotH - v / top * plotH;
-  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Usage by hour">`;
-  for (const t of ticks) s += `<line x1="${L}" x2="${W - 8}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${fmtVal(t)}</text>`;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Usage by hour of day">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - 8}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   vals.forEach((v, h) => {
     const x = L + h * slot + (slot - bw) / 2, hh = y(0) - y(v);
     if (hh > 0) s += hh > 4 ? `<path class="bar" d="${roundTop(x, y(v), bw, hh, 3)}" fill="var(--accent)"/>` : `<rect class="bar" x="${x}" y="${y(v)}" width="${bw}" height="${hh}" fill="var(--accent)"/>`;
     if (h % every === 0) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`;
-    s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}"/>`;
+    s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="0" aria-label="${pad(h)}:00 to ${pad(h)}:59: ${fmtVal(v)}"/>`;
   });
   s += `</svg>`;
   $("#hourly").innerHTML = s;
@@ -754,29 +794,30 @@ function renderHourly() {
 }
 
 // weekday x hour grid: when in the week the usage happens
+const WEEKDAY_NAMES = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
+let heatFocus = null; // the one grid cell in the tab order; arrow keys move it
 function renderHeat() {
   const v = new Array(7 * 24).fill(0), days = new Array(7).fill(null).map(() => new Set());
   for (const r of D.rows) {
     if (!passes(r)) continue;
-    const wd = r[11];
-    v[wd * 24 + r[10]] += val(r);
-    days[wd].add(r[9]);
+    v[r[11] * 24 + r[10]] += val(r);
+    days[r[11]].add(r[9]);
   }
   const max = Math.max(...v);
   if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">No usage.</div>`; return; }
+  if (heatFocus === null) heatFocus = v.indexOf(max);
   const { W, H } = boxOf("#hourly"), L = 34, B = 20, T = 2;
   const cw = (W - L - 2) / 24, ch = Math.min((H - B - T) / 7, cw * 2.4), gap = cw > 10 ? 2 : 1;
   const every = cw < 13 ? 6 : cw > 34 ? 2 : 3;
-  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Usage by weekday and hour">`;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="grid" aria-label="Usage by weekday and hour. Arrow keys move between cells.">`;
   for (let wd = 0; wd < 7; wd++) {
-    s += `<text x="${L - 6}" y="${T + wd * ch + ch / 2 + 4}" text-anchor="end">${WEEKDAYS[wd]}</text>`;
+    s += `<text x="${L - 6}" y="${T + wd * ch + ch / 2 + 4}" text-anchor="end">${WEEKDAYS[wd]}</text><g role="row">`;
     for (let h = 0; h < 24; h++) {
-      const x = L + h * cw, yy = T + wd * ch, a = v[wd * 24 + h] / max;
-      // square root so light use still shows
-      s += `<rect x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="var(--accent)" fill-opacity="${a ? (0.1 + 0.9 * Math.pow(a, 0.75)).toFixed(3) : 0}"/>`;
-      if (!a) s += `<rect x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="var(--surface-2)"/>`;
-      s += `<rect class="hit" data-i="${wd * 24 + h}" x="${x}" y="${yy}" width="${cw}" height="${ch}"/>`;
+      const i = wd * 24 + h, x = L + h * cw, yy = T + wd * ch, a = v[i] / max;
+      s += `<rect x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${a ? (0.1 + 0.9 * Math.pow(a, 0.75)).toFixed(3) : 1}"/>`;
+      s += `<rect class="hit" role="gridcell" data-i="${i}" x="${x}" y="${yy}" width="${cw}" height="${ch}" tabindex="${i === heatFocus ? 0 : -1}" aria-label="${WEEKDAYS[wd]} ${pad(h)}:00: ${fmtVal(v[i])}"/>`;
     }
+    s += `</g>`;
   }
   for (let h = 0; h < 24; h += every) s += `<text x="${L + h * cw + cw / 2}" y="${T + 7 * ch + 14}" text-anchor="middle">${hourName(h)}</text>`;
   if (H - (T + 7 * ch) > 40) {
@@ -790,7 +831,7 @@ function renderHeat() {
   $("#hourly").innerHTML = s;
   $("#hourly svg")._tip = (i) => {
     const wd = Math.floor(i / 24), h = i % 24;
-    return `<div class="h">${WEEKDAYS[wd]} ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${fmtVal(v[i])}</span></div><div class="r"><span>${["Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays","Sundays"][wd]} with use</span><span>${days[wd].size}</span></div>`;
+    return `<div class="h">${WEEKDAYS[wd]} ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${fmtVal(v[i])}</span></div><div class="r"><span>${WEEKDAY_NAMES[wd]} with use</span><span>${days[wd].size}</span></div>`;
   };
 }
 
@@ -811,10 +852,9 @@ function renderSessions() {
   for (const r of D.rows) {
     if (!passes(r, { ignoreSess: true })) continue;
     let a = agg.get(r[1]);
-    if (!a) { a = { cost: 0, tok: 0, reqs: 0, models: new Map(), first: Infinity, last: 0 }; agg.set(r[1], a); }
+    if (!a) { a = { cost: 0, tok: 0, reqs: 0, models: new Map() }; agg.set(r[1], a); }
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.reqs += r[8];
     a.models.set(r[0], (a.models.get(r[0]) || 0) + r[7] + 1e-12 * (r[3] + r[4]));
-    a.first = Math.min(a.first, r[2]); a.last = Math.max(a.last, r[2]);
   }
   const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => D.sFirst[a[0]], last: (a) => D.sLast[a[0]], title: (a) => (D.sessions[a[0]][3] || "").toLowerCase() }[state.sort] || ((a) => a[1].cost);
   const list = [...agg.entries()].sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * state.sortDir; }).slice(0, 300);
@@ -826,7 +866,7 @@ function renderSessions() {
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
   const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
   const sortAttr = (k) => ` data-sort="${k}" tabindex="0" aria-sort="${state.sort === k ? (state.sortDir < 0 ? "descending" : "ascending") : "none"}"`;
-  $("#sessions").innerHTML = `<table><thead><tr>
+  $("#sessions").innerHTML = `<table role="grid" aria-label="Sessions"><thead><tr>
       <th${sortAttr("title")}>Session${arrow("title")}</th>${showTool ? "<th>Tool</th>" : ""}<th class="xcol">Project</th><th>Main model</th><th${sortAttr("start")}>Started${arrow("start")}</th><th class="xcol"${sortAttr("last")}>Last active${arrow("last")}</th>
       <th class="num"${sortAttr("reqs")}>Requests${arrow("reqs")}</th><th class="num"${sortAttr("tokens")}>Tokens${arrow("tokens")}</th><th class="num"${sortAttr("cost")}>API cost${arrow("cost")}</th></tr></thead><tbody>
     ${list.map(([si, a]) => {
@@ -888,7 +928,7 @@ const dbar = (v, max) => ` style="--w:${Math.max(0, Math.min(100, v / max * 100)
 function renderProjects() {
   const agg = new Map();
   for (const r of D.rows) {
-    if (!passes(r, { ignoreProj: true, ignoreSess: true })) continue;
+    if (!passes(r, { ignoreProj: true })) continue;
     const p = D.sessions[r[1]][2];
     let a = agg.get(p); if (!a) { a = { cost: 0, tok: 0, sess: new Set() }; agg.set(p, a); }
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.sess.add(r[1]);
@@ -900,7 +940,7 @@ function renderProjects() {
   $("#projects").hidden = map; $("#projMap").hidden = !map;
   if (map) return renderProjMap(all);
   if (!list.length) { $("#projects").innerHTML = `<div class="empty">No projects.</div>`; return; }
-  $("#projects").innerHTML = `<table><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">${state.metric === "cost" ? "API cost" : "Tokens"}</th></tr></thead><tbody>
+  $("#projects").innerHTML = `<table role="grid" aria-label="Projects"><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">${state.metric === "cost" ? "API cost" : "Tokens"}</th></tr></thead><tbody>
     ${list.map(([p, a]) => `<tr data-proj="${p}" tabindex="0" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}
 ${fmtTok(a.tok)} tokens, ${fmtUsd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? fmtUsd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
   </tbody></table>${all.length > 200 ? `<div class="note">Top 200 of ${fmtInt(all.length)} projects. The map counts all of them.</div>` : ""}`;
@@ -938,6 +978,19 @@ document.addEventListener("mousemove", (e) => {
   if (y + h > innerHeight - 8) y = e.clientY - h - 14;
   tip.style.left = x + "px"; tip.style.top = y + "px";
 });
+document.addEventListener("focusin", (e) => {
+  const hit = e.target.closest && e.target.closest(".hit");
+  const svg = hit && hit.ownerSVGElement;
+  if (!svg || !svg._tip) return;
+  const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
+  tip.innerHTML = svg._tip(k); tipKey = svg.parentElement.id + ":" + k; tip.style.display = "block";
+  const rc = hit.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = rc.right + 8, y = rc.top;
+  if (x + w > innerWidth - 8) x = rc.left - w - 8;
+  if (y + h > innerHeight - 8) y = innerHeight - h - 8;
+  tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+});
+document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".hit")) { tip.style.display = "none"; tipKey = null; } });
 document.addEventListener("click", (e) => {
   const t = e.target;
   const seg = t.closest(".seg button");
@@ -955,7 +1008,8 @@ document.addEventListener("click", (e) => {
   }
   const tab = t.closest(".tabs button");
   if (tab) {
-    document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b === tab));
+    document.querySelectorAll(".tabs button").forEach((b) => { b.setAttribute("aria-selected", b === tab); b.tabIndex = b === tab ? 0 : -1; });
+    tip.style.display = "none";
     $("#tab-overview").hidden = tab.dataset.tab !== "overview";
     $("#tab-prices").hidden = tab.dataset.tab !== "prices";
     return;
@@ -980,6 +1034,20 @@ function refocus(e, sel) { if (e.detail === 0) { const el = document.querySelect
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".hbar, [data-day], [data-sess], [data-proj], [data-model], [data-sort]")) {
     e.preventDefault(); e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); return;
+  }
+  if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && e.target.matches && e.target.matches('.tabs [role="tab"]')) {
+    const tabs = [...document.querySelectorAll('.tabs [role="tab"]')], i = tabs.indexOf(e.target);
+    const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    next.click(); next.focus(); return;
+  }
+  if (e.key.startsWith("Arrow") && e.target.matches && e.target.matches('#hourly [role="gridcell"]')) {
+    e.preventDefault();
+    const i = +e.target.dataset.i, wd = Math.floor(i / 24), h = i % 24;
+    const nh = e.key === "ArrowLeft" ? Math.max(0, h - 1) : e.key === "ArrowRight" ? Math.min(23, h + 1) : h;
+    const nw = e.key === "ArrowUp" ? Math.max(0, wd - 1) : e.key === "ArrowDown" ? Math.min(6, wd + 1) : wd;
+    const next = $(`#hourly [data-i="${nw * 24 + nh}"]`);
+    if (next) { e.target.tabIndex = -1; next.tabIndex = 0; heatFocus = nw * 24 + nh; next.focus(); }
+    return;
   }
   if (e.key === "F11") { e.preventDefault(); return setFullscreen(!isFullscreen); }
   if (e.key === "Escape") {
@@ -1006,11 +1074,15 @@ function expandCard(card) {
   // only the open card (and the controls above it) take focus
   document.querySelectorAll(".board .card, .kpis, footer").forEach((el) => { el.inert = !!max && el !== max; });
   if (!max && open) open.querySelector("[data-expand]").focus();
+  // Last active only shows in full screen; do not leave the list sorted by a hidden column
+  if (open && open.id === "c-sessions" && state.sort === "last" && open !== max) { state.sort = "cost"; state.sortDir = -1; renderSessions(); }
   tip.style.display = "none";
 }
 // the open card starts under the filter line, so active filters stay visible
 function placeMax() { document.documentElement.style.setProperty("--max-top", Math.max(8, Math.ceil($(".bar2").getBoundingClientRect().bottom + 8)) + "px"); }
 window.addEventListener("resize", () => { if (document.querySelector(".card.max")) placeMax(); });
+new ResizeObserver(() => { if (document.querySelector(".card.max")) placeMax(); }).observe($(".bar2"));
+new ResizeObserver(() => { if (document.querySelector(".card.max")) placeMax(); }).observe($("#update"));
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-expand]"); if (b) expandCard(b.closest(".card")); });
 document.addEventListener("dblclick", (e) => { const hd = e.target.closest(".board .card .hd"); if (hd && !e.target.closest("button")) expandCard(hd.closest(".card")); });
 let isFullscreen = false;
@@ -1028,6 +1100,8 @@ window.tkFullscreen = function (on) {
   b.title = on ? "Leave full screen (F11 or Esc)" : "Full screen window (F11)";
 };
 window.tkFullscreen(false);
+// browser preview only: Esc can leave full screen without telling the page
+document.addEventListener("fullscreenchange", () => { if (!window.ipc) window.tkFullscreen(!!document.fullscreenElement); });
 $("#fs").addEventListener("click", () => setFullscreen(!isFullscreen));
 
 // drag across the daily chart to filter to a span of days
@@ -1052,12 +1126,12 @@ document.addEventListener("mousemove", (e) => {
 document.addEventListener("mouseup", () => {
   if (!drag) return;
   const d = drag; drag = null;
-  if (d.from === d.to) return; // a plain click: the click handler toggles that day
+  if (d.from === d.to) { if (d.pending) render(); return; } // a plain click: the click handler toggles that day
   const ks = [d.from.dataset.day, d.from.dataset.to, d.to.dataset.day, d.to.dataset.to].sort();
   state.day = [ks[0], ks[3]];
   render();
 });
-window.addEventListener("blur", () => { if (drag) { if (drag.band) drag.band.remove(); drag = null; } });
+window.addEventListener("blur", () => { if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; if (p) render(); } });
 
 function requestScan() {
   if (!window.ipc || $("#refresh").disabled) return;

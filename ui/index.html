@@ -79,10 +79,10 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .board { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
 /* narrow cards drop the hint so the title and buttons fit */
-@container (max-width: 300px) { .card .hd .sub { display: none; } }
+@container (max-width: 240px) { .card .hd .sub { display: none; } }
 @container (max-width: 520px) { #c-daily .hd .sub { display: none; } }
 .card .hd { user-select: none; display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; }
-.card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; max-width: 100%; }
+.card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; max-width: 100%; }
 .card .hd > .seg, .card .hd > .xp { flex: none; }
 .card .hd .sub { flex: 0 100 auto; } /* the hint gives up its room before the title does */
 .card:not(.max) #trendLegend { flex-wrap: nowrap; overflow: hidden; }
@@ -159,7 +159,7 @@ footer { flex: none; display: flex; gap: 12px; align-items: center; color: var(-
 .appver { display: flex; gap: 8px; align-items: center; }
 .appver button { background: none; border: 0; padding: 0; color: var(--accent-text); cursor: pointer; font-size: 11px; }
 .appver button:disabled { color: var(--text-muted); cursor: default; }
-.seg.mini button { padding: 2px 8px; font-size: 11px; }
+.seg.mini button { padding: 2px 8px; font-size: 11px; min-height: 24px; }
 .card .hd .spacer { flex: 1; }
 .xp { background: none; border: 1px solid transparent; border-radius: 6px; color: var(--text-muted); cursor: pointer; padding: 4px; display: inline-flex; align-items: center; justify-content: center; line-height: 0; min-width: 24px; min-height: 24px; }
 .xp:hover { color: var(--text-primary); border-color: var(--border); background: var(--surface-2); }
@@ -233,7 +233,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     </div>
     <div class="tools">
     <label class="chk"><input type="checkbox" id="live"> Live</label>
-    <button class="btn" id="refresh">Refresh</button>
+    <button class="btn" id="refresh" disabled>Refresh</button>
     <button class="btn icon" id="theme" title="Light theme" aria-label="Switch to light theme"></button>
     <button class="btn icon" id="fs" title="Full screen window (F11)" aria-label="Full screen window" aria-pressed="false"></button>
     </div>
@@ -324,9 +324,11 @@ const pad = (n) => String(n).padStart(2, "0");
 const dayKey = (d) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 // dates outside this year carry the year, so long histories stay unambiguous
 let THIS_YEAR = new Date().getFullYear(); // refreshed by render(), so a window open over New Year stays right
-const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, y === THIS_YEAR ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" }); };
+const FMT_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }), FMT_DAY_Y = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
+const FMT_DT = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric" }), FMT_DT_Y = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric", hour: "numeric" });
+const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return (y === THIS_YEAR ? FMT_DAY : FMT_DAY_Y).format(new Date(y, m - 1, d)); };
 // logs are bucketed by hour, so times show the hour only
-const dtLabel = (ts) => { if (!ts) return ""; const d = new Date(ts * 1000); return d.toLocaleString(undefined, d.getFullYear() === THIS_YEAR ? { month: "short", day: "numeric", hour: "numeric" } : { year: "numeric", month: "short", day: "numeric", hour: "numeric" }); };
+const dtLabel = (ts) => { if (!ts) return ""; const d = new Date(ts * 1000); return (d.getFullYear() === THIS_YEAR ? FMT_DT : FMT_DT_Y).format(d); };
 // axis labels show only the decimals the tick step needs
 function tickFmt(ticks, v) {
   if (state.metric !== "cost") return fmtTok(v).replace(/\.0+(?=[KMB]$)/, "");
@@ -337,7 +339,7 @@ function tickFmt(ticks, v) {
 // left margin wide enough for the longest axis label
 const axisL = (ticks) => Math.max(44, Math.ceil(12 + 6.6 * Math.max(...ticks.map((t) => tickFmt(ticks, t).length))));
 // table cost cells: always cents, so decimal points line up and match tooltips
-const colUsd = () => (v) => v >= 0.005 ? "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v > 0 ? "<$0.01" : "$0.00";
+const colUsd = (v) => v >= 0.005 ? "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : v > 0 ? "<$0.01" : "$0.00";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const baseName = (p) => { const parts = p.split(/[\\/]/).filter(Boolean); return parts.length ? parts[parts.length - 1] : p; };
 
@@ -448,7 +450,7 @@ const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
 // selector for the focused item, so a redraw (Live refresh, filter) can put focus back
 function focusKey(el) {
   if (!el || !el.getAttribute) return null;
-  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi", "data-showall"]) {
+  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi", "data-showall", "data-more"]) {
     if (el.hasAttribute(a)) { const host = el.closest("[id]"); return host ? `#${host.id} [${a}="${el.getAttribute(a)}"]` : null; }
   }
   return null;
@@ -685,7 +687,7 @@ function renderDaily() {
     const dim = state.day && !sel(b) ? ' opacity="0.35"' : "";
     segs.forEach(([m, a, v], j) => {
       const y0 = y(a), y1 = y(a + v);
-      const h = Math.max(0, y0 - y1 - (j > 0 && !running && bw >= 6 ? 2 : 0));
+      const raw = y0 - y1, h = raw <= 0 ? 0 : Math.max(1, raw - (j > 0 && !running && bw >= 6 && raw >= 4 ? 2 : 0));
       const top = j === segs.length - 1;
       const color = colorVar(m);
       if (h <= 0) return;
@@ -729,7 +731,7 @@ function boxOf(sel) {
 }
 let resizeQueued = false;
 const chartResize = new ResizeObserver(() => {
-  if (resizeQueued || !D) return;
+  if (resizeQueued || !D || $("#tab-overview").hidden) return;
   if (drag) { drag.pending = true; return; }
   resizeQueued = true;
   requestAnimationFrame(() => {
@@ -780,7 +782,7 @@ function renderModels() {
   $("#models").innerHTML = list.map(([m, a]) => {
     const md = D.models[m]; const v = state.metric === "cost" ? a.cost : a.tok;
     const c = ownSeries(m) ? colorVar(m) : "var(--other)";
-    const right = state.metric === "cost" ? (md.priced ? fmtUsd(a.cost) : "no public price") : fmtTok(a.tok);
+    const right = state.metric === "cost" ? (md.priced ? colUsd(a.cost) : "no public price") : fmtTok(a.tok);
     return `<div class="hbar" data-model="${m}" role="button" aria-pressed="${state.model === m}" tabindex="-1">
       <div class="n"><i style="background:${c}"></i><span class="nm">${esc(md.name)}</span>${bothTools ? `<span class="muted">${SRC_NAME[md.src]}</span>` : ""}</div>
       <div class="val">${right}</div>
@@ -860,7 +862,7 @@ function renderModelTrend() {
     const faded = state.model !== null && state.model !== m ? ' stroke-opacity="0.25"' : "";
     s += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-linejoin="round" stroke-linecap="round"${faded}/>`;
     if (partial) s += `<polyline points="${ptl.slice(-2).join(" ")}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-dasharray="3 3" stroke-linecap="round"${faded || ' stroke-opacity="0.8"'}/>`;
-    if (n <= 2) series.get(m).forEach((v, i) => { if (v > 0) s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${c}"${faded ? ' fill-opacity="0.25"' : ""}/>`; });
+    if (n <= 2 || ptl.length === 1) series.get(m).slice(0, upto).forEach((v, i) => { if (v > 0) s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${c}"${faded ? ' fill-opacity="0.25"' : ""}/>`; });
   }
   const rowsAt = (i) => order.map((m) => [m === -1 ? "Other models" : D.models[m].name, colorVar(m), series.get(m)[i]]).filter((r) => r[2] > 0);
   const slot = plotW / Math.max(1, n - 1);
@@ -934,13 +936,14 @@ function renderHeat() {
     }
     s += `</g>`;
   }
-  for (let h = 0; h < 24; h += every) s += `<text x="${L + h * cw + cw / 2}" y="${T + 7 * ch + 14}" text-anchor="middle">${hourName(h)}</text>`;
+  for (let h = 0; h < 24; h += every) s += `<text aria-hidden="true" x="${L + h * cw + cw / 2}" y="${T + 7 * ch + 14}" text-anchor="middle">${hourName(h)}</text>`;
   {
     // a less-to-more key under the grid when there is room
     const ky = T + 7 * ch + 24, kx = Math.max(L + 30, W - 2 - 5 * 14 - 120);
     s += `<text aria-hidden="true" x="${kx - 20}" y="${ky + 10}" text-anchor="end">Less</text>`;
     [0, .2, .4, .6, .8, 1].forEach((a, i) => s += `<rect aria-hidden="true" x="${kx + i * 14 - 14}" y="${ky}" width="12" height="12" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${heatOp(a)}"/>`);
-    s += `<text aria-hidden="true" x="${kx + 5 * 14 + 4}" y="${ky + 10}">More (max ${tickFmt([0, 1], max)})</text>`;
+    const mx = fmtVal(max).replace(/\.0(?=\D*$)/, ""), more = kx + 5 * 14 + 4 + 6.4 * ("More (max " + mx + ")").length <= W - 2 ? `More (max ${mx})` : "More";
+    s += `<text aria-hidden="true" x="${kx + 5 * 14 + 4}" y="${ky + 10}">${more}</text>`;
   }
   s += `</svg>`;
   $("#hourly").innerHTML = s;
@@ -971,17 +974,19 @@ function renderSessions() {
     let a = agg.get(r[1]);
     if (!a) { a = { cost: 0, tok: 0, reqs: 0, models: new Map() }; agg.set(r[1], a); }
     a.cost += r[7]; a.tok += r[3] + r[4] + r[5] + r[6]; a.reqs += r[8];
-    a.models.set(r[0], (a.models.get(r[0]) || 0) + r[7] + 1e-12 * (r[3] + r[4]));
+    const tk = r[3] + r[4] + r[5] + r[6]; a.models.set(r[0], (a.models.get(r[0]) || 0) + (state.metric === "cost" ? r[7] + 1e-12 * tk : tk));
   }
   const key = { cost: (a) => a[1].cost, tokens: (a) => a[1].tok, reqs: (a) => a[1].reqs, start: (a) => D.sFirst[a[0]], last: (a) => D.sLast[a[0]], title: (a) => sessTitle(a[0]).toLowerCase() }[state.sort] || ((a) => a[1].cost);
-  const list = [...agg.entries()].map((a) => [a, key(a)]).sort((p, q) => (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) * state.sortDir).map((p) => p[0]).slice(0, state.sessCap);
-  // keep the selected session visible even when it is outside the top 300
-  if (state.sess !== null && agg.has(state.sess) && !list.some(([si]) => si === state.sess)) list.push([state.sess, agg.get(state.sess)]);
+  const cmp = (p, q) => (p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0) * state.sortDir;
+  const ranked = [...agg.entries()].map((a) => [a, key(a)]).sort(cmp), top = ranked.slice(0, state.sessCap);
+  // keep the selected session visible even when it is outside the top 300, in its sorted place
+  if (state.sess !== null && agg.has(state.sess) && !top.some((p) => p[0][0] === state.sess)) { top.push(ranked.find((p) => p[0][0] === state.sess)); top.sort(cmp); }
+  const list = top.map((p) => p[0]);
   if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; return; }
   // the Tool column only helps when both tools are in the list
   const showTool = state.src === "all" && D.lastBySrc[0] > 0 && D.lastBySrc[1] > 0;
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
-  const usd = colUsd(maxCost);
+  const usd = colUsd;
   const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
   const sortAttr = (k) => ` data-sort="${k}" tabindex="-1" aria-sort="${state.sort === k ? (state.sortDir < 0 ? "descending" : "ascending") : "none"}"`;
   $("#sessions").innerHTML = `<table role="grid" aria-label="Sessions"><thead><tr>
@@ -1025,8 +1030,8 @@ function renderProjMap(list) {
   let items = list.filter(([, a]) => v(a) > 0).map(([p, a]) => ({ p, a, v: v(a) }));
   if (!items.length) { el.innerHTML = `<div class="empty">${list.length && state.metric === "cost" ? "No priced usage in these projects. Switch to Tokens to see them." : "No projects."}</div>`; return; }
   const total = items.reduce((s, it) => s + it.v, 0);
-  // fold the long tail into one box so boxes can hold a label; the top 3 and the selected one always get a box
-  const keep = items.filter((it, i) => i < 3 || (i < 24 && it.v / total * W * H >= 34 * 18 * 2) || it.p === state.proj);
+  // fold the long tail into one box so boxes can hold a label; the biggest and the selected one always get a box
+  const keep = items.filter((it, i) => i === 0 || (i < 24 && it.v / total * W * H >= 28 * 18 * 2) || it.p === state.proj);
   const rest = items.filter((it) => !keep.includes(it));
   if (rest.length) keep.push({ p: null, v: rest.reduce((s, it) => s + it.v, 0), n: rest.length });
   keep.sort((x, y) => y.v - x.v);
@@ -1035,9 +1040,9 @@ function renderProjMap(list) {
   el.innerHTML = rects.map(([x, y, w, h], i) => {
     const it = keep[i], share = it.v / total * 100;
     const strength = it.p === null ? 12 : Math.round(20 + 40 * Math.sqrt(it.v / top)); // capped so labels keep contrast
-    const name = it.p === null ? `${it.n} more` : baseName(D.projects[it.p]);
-    const big = w > 70 && h > 38, small = w > 34 && h > 18;
-    const tip = it.p === null ? `${it.n} smaller projects. Click for the full list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${colUsd()(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
+    const name = it.p === null ? (w > 60 ? `${it.n} more` : `+${it.n}`) : baseName(D.projects[it.p]);
+    const big = w > 60 && h > 34, small = w > 26 && h > 16;
+    const tip = it.p === null ? `${it.n} smaller projects. Click for the full list.` : `${D.projects[it.p]}\n${fmtTok(it.a.tok)} tokens, ${colUsd(it.a.cost)}, ${it.a.sess.size} session${it.a.sess.size === 1 ? "" : "s"}`;
     return `<div class="tm${it.p !== null && state.proj === it.p ? " sel" : ""}"${it.p !== null ? ` data-proj="${it.p}" tabindex="-1" role="button" aria-pressed="${state.proj === it.p}" aria-label="${esc(tip.replace(/\n/g, ". "))}"` : ` data-more tabindex="-1" role="button" aria-label="${it.n} smaller projects: ${fmtVal(it.v)}. Opens the full list."`} title="${esc(tip)}" style="left:${x.toFixed(1)}px;top:${y.toFixed(1)}px;width:${Math.max(0, w - 2).toFixed(1)}px;height:${Math.max(0, h - 2).toFixed(1)}px;--k:${strength}%">${big ? `<b>${esc(name)}</b><span>${fmtVal(it.v)} · ${share >= 1 ? Math.round(share) : share.toFixed(1)}%</span>` : small ? `<b>${esc(name)}</b>` : ""}</div>`;
   }).join("");
   rove("#projMap", ".tm[data-proj], .tm[data-more]");
@@ -1059,7 +1064,7 @@ function renderProjects() {
   const list = all.slice(0, state.projCap);
   if (state.proj !== null && !list.some(([p]) => p === state.proj)) { const it = all.find(([p]) => p === state.proj); if (it) list.push(it); }
   const pmax = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
-  const usd = colUsd(Math.max(0, ...list.map(([, a]) => a.cost)));
+  const usd = colUsd;
   const map = state.projMode === "map";
   $("#projects").hidden = map; $("#projMap").hidden = !map;
   if (map) return renderProjMap(all);
@@ -1101,6 +1106,9 @@ function rove(hostSel, itemSel) {
 const tip = $("#tip");
 let tipKey = null, lastMouse = null, tipFromFocus = false;
 document.addEventListener("mousemove", (e) => { lastMouse = { clientX: e.clientX, clientY: e.clientY }; moveTip(e); });
+const hideMouseTip = () => { if (!tipFromFocus) { tip.style.display = "none"; tipKey = null; lastMouse = null; } };
+document.documentElement.addEventListener("mouseleave", hideMouseTip);
+document.addEventListener("scroll", hideMouseTip, true);
 function moveTip(e) {
   const hit = e.target.closest && e.target.closest(".hit");
   tipFromFocus = false;
@@ -1125,7 +1133,7 @@ document.addEventListener("focusin", (e) => {
   }
   const hit = e.target.closest && e.target.closest(".hit");
   const svg = hit && hit.ownerSVGElement;
-  if (!svg || !svg._tip) return;
+  if (!svg || !svg._tip || !hit.matches(":focus-visible")) return;
   const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
   tip.innerHTML = svg._tip(k); tipKey = svg.parentElement.id + ":" + k; tip.style.display = "block"; tipFromFocus = true;
   hit.setAttribute("aria-describedby", "tip");
@@ -1225,7 +1233,7 @@ document.addEventListener("keydown", (e) => {
   const host = e.target.closest && e.target.closest("[data-rove]");
   if (host && e.target.matches(host.dataset.rove) && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(e.key)) {
     e.preventDefault();
-    const items = [...host.querySelectorAll(host.dataset.rove)], i = items.indexOf(e.target);
+    const items = [...host.querySelectorAll(host.dataset.rove)].filter((el) => el.getClientRects().length), i = items.indexOf(e.target);
     const j = { ArrowUp: i - 1, ArrowLeft: i - 1, ArrowDown: i + 1, ArrowRight: i + 1, Home: 0, End: items.length - 1, PageUp: i - 10, PageDown: i + 10 }[e.key];
     const next = items[Math.max(0, Math.min(items.length - 1, j))];
     next.focus(); if (next.scrollIntoView) next.scrollIntoView({ block: "nearest" });
@@ -1236,7 +1244,7 @@ document.addEventListener("keydown", (e) => {
     if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; return; }
     if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; } // the mouse button is still down: eat the click that comes with its release
     if (document.querySelector(".card.max")) return expandCard(null);
-    if (!$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
+    if (!$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { if (document.activeElement && document.activeElement.closest("#filters")) focusOverride = '#rangeSeg [aria-pressed="true"]'; Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
     if (isFullscreen) return setFullscreen(false);
   }
 });
@@ -1305,6 +1313,7 @@ document.addEventListener("mousedown", (e) => {
 });
 document.addEventListener("mousemove", (e) => {
   if (!drag) return;
+  if (e.buttons === 0) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; if (p) render(); return; } // released outside the window
   const hit = e.target.closest && e.target.closest("#daily .hit[data-day]");
   if (!hit || hit === drag.to) return;
   drag.to = hit;

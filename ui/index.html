@@ -321,7 +321,9 @@ const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const slotByKey = new Map(); // model -> color slot, kept across scans
 const SRC_NAME = ["Claude Code", "Codex"];
 const projName = (p) => D.projNames ? D.projNames[p] : baseName(D.projects[p]);
-const midCut = (n) => { const c = [...n]; return c.length > 16 ? c.slice(0, 6).join("") + "…" + c.slice(-9).join("") : n; }; // scratch-2026-10-18-789ff2 -> scratc…18-789ff2
+const GRAPH = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+const chars = (n) => GRAPH ? Array.from(GRAPH.segment(n), (x) => x.segment) : [...n]; // what the eye sees as one character
+const midCut = (n) => { const c = chars(n); return c.length > 16 ? c.slice(0, 6).join("") + "…" + c.slice(-9).join("") : n; }; // scratch-2026-10-18-789ff2 -> scratc…18-789ff2
 const midName = (n) => D.projShort && D.projShort.has(n) ? D.projShort.get(n) : midCut(n);
 // the oldest kept log for the selected tool (both tools: the oldest of either)
 const FD = () => state.src === "all" ? D.firstDay : D.firstDayBySrc[+state.src];
@@ -423,10 +425,10 @@ window.tkData = function (data) {
     D.projShort = new Map(D.projNames.map((n, i) => [n, cut[i]])); const groups = new Map();
     D.projNames.forEach((n, i) => { if (cc.get(cut[i]) > 1) { if (!groups.has(cut[i])) groups.set(cut[i], []); groups.get(cut[i]).push(n); } });
     for (const g of groups.values()) { // customer-alpha/frontend, customer-gamma/frontend -> custom…ha/frontend, custom…ma/frontend
-      const tail = (n, k) => [...n].slice(-k).join(""); // whole characters
-      let k = 9; const longest = Math.max(...g.map((n) => [...n].length));
+      const tail = (n, k) => chars(n).slice(-k).join(""); // whole characters
+      let k = 9; const longest = Math.max(...g.map((n) => chars(n).length));
       while (k < longest && new Set(g.map((n) => tail(n, k))).size < g.length) k++;
-      for (const n of g) D.projShort.set(n, [...n].length > k + 7 ? [...n].slice(0, 6).join("") + "…" + tail(n, k) : n);
+      for (const n of g) D.projShort.set(n, chars(n).length > k + 7 ? chars(n).slice(0, 6).join("") + "…" + tail(n, k) : n);
     } }
   const nameCount = new Map(); for (const m of D.models) nameCount.set(m.name, (nameCount.get(m.name) || 0) + 1);
   for (const m of D.models) if (nameCount.get(m.name) > 1 && m.name !== m.id) { m.name += " (" + m.id + ")"; }
@@ -542,7 +544,7 @@ function render() {
     el.scrollTop = listKeys.get(el) === undefined || listKeys.get(el) === k ? t : 0; listKeys.set(el, k);
   }
   if (fk && (document.activeElement === document.body || !document.activeElement)) {
-    const el = document.querySelector(fk) || (fk.startsWith("#") && document.querySelector(fk.split(" ")[0] + ' [tabindex="0"]'));
+    const el = document.querySelector(fk) || (fk.startsWith("#") && document.querySelector(fk.split(" ")[0] + ' [tabindex="0"]')) || (fk.startsWith("#filters") && document.querySelector('#rangeSeg [aria-pressed="true"]'));
     if (el) el.focus({ preventScroll: true });
   }
   hideAxisText();
@@ -708,7 +710,7 @@ function renderDaily() {
   else {
     let min = null;
     for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { if (!min || r[9] < min) min = r[9]; }
-    if (!min) { $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; $("#dailyLegend").innerHTML = ""; return; }
+    if (!min) { $("#dailyHint").textContent = ""; $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; $("#dailyLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
   const days = [];
@@ -808,7 +810,8 @@ function renderDaily() {
     const head = running ? `${name(buckets[i])}${part}: ${tipVal(cumTot[i])}${buckets[i].to === dayKey(new Date()) ? " so far" : ""}` : `${name(buckets[i])}${part}: ${tipVal(totals[i])}${buckets[i].to === dayKey(new Date()) ? " so far" : ""}`;
     const foot = running ? `<div class="r tsep"><span>That ${unit}</span><span>${tipVal(totals[i])}</span></div>` : `<div class="r tsep"><span>Running total</span><span>${tipVal(cumTot[i])}</span></div>` + (avg ? `<div class="r"><span>Average per ${unit}, ${step === 7 ? "full weeks" : "idle days incl., today left out"}</span><span>${tipVal(avg)}</span></div>` : "");
     const unp = state.metric === "cost" && !totals[i] && unpTok[i] > 0 ? `<div class="r"><span>No priced usage</span><span>${fmtTok(unpTok[i])} unpriced tokens</span></div>` : "";
-    return `<div class="h">${head}</div>` + unp + rows.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${tipVal(v)}</span></div>`).join("") + foot;
+    const cap = Math.max(3, Math.floor((innerHeight - 170) / 20)), shown = rows.length > cap ? rows.slice(0, cap - 1) : rows, rest = rows.slice(shown.length);
+    return `<div class="h">${head}</div>` + unp + shown.map(([nm, c, v]) => `<div class="r"><span><i style="background:${c}"></i>${esc(nm)}</span><span>${tipVal(v)}</span></div>`).join("") + (rest.length ? `<div class="r"><span>${rest.length} more models</span><span>${tipVal(rest.reduce((a, r) => a + r[2], 0))}</span></div>` : "") + foot;
   };
 }
 
@@ -1030,15 +1033,18 @@ const WEEKDAY_NAMES = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Friday
 // five even steps of the busiest cell, so the key reads directly
 const heatOp = (a) => !a ? 1 : [0.32, 0.48, 0.64, 0.82, 1][Math.min(4, Math.ceil(a * 5) - 1)];
 let heatFocus = null; // the one grid cell in the tab order; arrow keys move it
+document.addEventListener("focusin", (e) => { const c = e.target.closest && e.target.closest('#hourly [role="gridcell"]'); if (!c) return; for (const el of document.querySelectorAll('#hourly [role="gridcell"][tabindex="0"]')) if (el !== c) el.tabIndex = -1; c.tabIndex = 0; heatFocus = +c.dataset.i; });
 function renderHeat() {
-  const v = new Array(7 * 24).fill(0), days = new Array(7).fill(null).map(() => new Set());
+  const v = new Array(7 * 24).fill(0), days = new Array(7).fill(null).map(() => new Set()), unpC = new Array(7 * 24).fill(0);
   for (const r of D.rows) {
     if (!passes(r)) continue;
     v[r[11] * 24 + r[10]] += val(r);
+    if (state.metric === "cost" && !D.models[r[0]].priced) unpC[r[11] * 24 + r[10]] += r[3] + r[4] + r[5] + r[6];
     days[r[11]].add(r[9]);
   }
   const max = Math.max(...v);
-  if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">${noUsage({}, "No usage.")}</div>`; return; }
+  const cellVal = (i) => !v[i] && unpC[i] ? `no priced usage, ${fmtTok(unpC[i])} unpriced tokens` : tipVal(v[i]);
+  if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">${unpC.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({}, "No usage.")}</div>`; return; }
   if (heatFocus === null || (!v[heatFocus] && !(document.activeElement && document.activeElement.closest && document.activeElement.closest("#hourly")))) heatFocus = v.indexOf(max);
   const { W, H } = boxOf("#hourly"), L = 34, B = 20, T = 2;
   const cw = (W - L - 2) / 24, ch = Math.min((H - B - T - 24) / 7, cw * 2.4), gap = cw > 10 ? 2 : 1;
@@ -1049,7 +1055,8 @@ function renderHeat() {
     for (let h = 0; h < 24; h++) {
       const i = wd * 24 + h, x = L + h * cw, yy = T + wd * ch, a = v[i] / max;
       s += `<rect aria-hidden="true" x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${heatOp(a)}"/>`;
-      s += `<rect class="hit" role="gridcell" data-i="${i}" x="${x}" y="${yy}" width="${cw}" height="${ch}" tabindex="${i === heatFocus ? 0 : -1}" aria-label="${WEEKDAYS[wd]} ${hourName(h)}, ${pad(h)}:00: ${tipVal(v[i])}"/>`;
+      if (!v[i] && unpC[i]) s += `<rect aria-hidden="true" x="${x}" y="${yy + ch - gap - 2}" width="${cw - gap}" height="2" fill="var(--text-muted)"/>`; // unpriced use only
+      s += `<rect class="hit" role="gridcell" data-i="${i}" x="${x}" y="${yy}" width="${cw}" height="${ch}" tabindex="${i === heatFocus ? 0 : -1}" aria-label="${WEEKDAYS[wd]} ${hourName(h)}, ${pad(h)}:00: ${cellVal(i)}"/>`;
     }
     s += `</g>`;
   }
@@ -1060,14 +1067,14 @@ function renderHeat() {
     s += `<text aria-hidden="true" x="${kx - 20}" y="${ky + 10}" text-anchor="end">Less</text>`;
     [0, .2, .4, .6, .8, 1].forEach((a, i) => s += `<rect aria-hidden="true" x="${kx + i * 14 - 14}" y="${ky}" width="12" height="12" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${heatOp(a)}"/>`);
     const mx = tipVal(max), more = kx + 5 * 14 + 4 + 6.4 * ("More (max " + mx + ")").length <= W - 2 ? `More (max ${mx})` : "More";
-    s += `<text aria-hidden="true" x="${kx + 5 * 14 + 4}" y="${ky + 10}">${more}</text>`;
+    s += `<text aria-hidden="true" x="${kx + 5 * 14 + 4}" y="${ky + 10}">${more}${more === "More" ? `<title>Max ${mx}</title>` : ""}</text>`;
   }
   s += `</svg>`;
   $("#hourly").innerHTML = s;
   delete $("#hourly").dataset.rove; // the grid has its own two-way arrow keys
   $("#hourly svg")._tip = (i) => {
     const wd = Math.floor(i / 24), h = i % 24;
-    return `<div class="h">${WEEKDAYS[wd]} ${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${tipVal(v[i])}</span></div><div class="r"><span>${WEEKDAY_NAMES[wd]} with use</span><span>${days[wd].size}</span></div>`;
+    return `<div class="h">${WEEKDAYS[wd]} ${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59</div><div class="r"><span>${state.metric === "cost" ? "API cost" : "Tokens"}</span><span>${cellVal(i)}</span></div><div class="r"><span>${WEEKDAY_NAMES[wd]} with use</span><span>${days[wd].size}</span></div>`;
   };
 }
 
@@ -1217,7 +1224,7 @@ ${fmtTok(a.tok)} tokens, ${a.priced ? usd(a.cost) : "no public price"}"><td clas
 }
 
 function renderPrices() {
-  $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`).join(" and ") + ".";
+  $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`).join(" and ") + "."; $("#priceSub").title = $("#priceSub").textContent;
   const usedIds = new Set(D.models.map((m) => m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, "")));
   // each column uses the decimals its finest price needs, so the points line up
   const decOf = (v) => { if (!v) return 0; let d = 0; while (d < 4 && Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) > 1e-9) d++; return d; };
@@ -1275,7 +1282,7 @@ function moveTip(e) {
   if (fresh) tipSize = [tip.offsetWidth, tip.offsetHeight];
   const [w, h] = tipSize;
   let x = e.clientX + 14, y = e.clientY + 14;
-  if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+  if (x + w > innerWidth - 8) x = Math.max(8, e.clientX - w - 14);
   if (y + h > innerHeight - 8) y = Math.max(8, e.clientY - h - 14);
   tip.style.left = x + "px"; tip.style.top = y + "px";
 }
@@ -1415,7 +1422,7 @@ document.addEventListener("keydown", (e) => {
     if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; return; }
     if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; } // the mouse button is still down: eat the click that comes with its release
     if (document.querySelector(".card.max")) return expandCard(null);
-    { const pre = document.activeElement && document.activeElement.closest && document.activeElement.closest("#update pre"); if (pre) { pre.hidden = true; const nb = $('#update [data-upd="notes"]'); if (nb) { nb.setAttribute("aria-expanded", "false"); nb.focus(); } return; } }
+    { const ae = document.activeElement, pre = ae && ae.closest && (ae.closest("#update pre") || (ae.matches('#update [data-upd="notes"][aria-expanded="true"]') && $("#update pre"))); if (pre) { pre.hidden = true; const nb = $('#update [data-upd="notes"]'); if (nb) { nb.setAttribute("aria-expanded", "false"); nb.focus(); } return; } }
     // Esc inside the update notes is not a filter reset
     if (!(document.activeElement && document.activeElement.closest && document.activeElement.closest("#update")) && !$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { if (document.activeElement && document.activeElement.closest("#filters")) focusOverride = '#rangeSeg [aria-pressed="true"]'; Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
     if (isFullscreen) return setFullscreen(false);

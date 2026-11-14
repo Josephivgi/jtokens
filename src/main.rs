@@ -830,13 +830,13 @@ fn run_gui(smoke: bool, report: Option<String>) {
         .primary_monitor()
         .map(|m| {
             let s = m.size().to_logical::<f64>(m.scale_factor());
-            LogicalSize::new((s.width - 40.0).clamp(720.0, 1360.0), (s.height - 100.0).clamp(480.0, 900.0))
+            LogicalSize::new((s.width - 40.0).clamp(560.0, 1360.0), (s.height - 100.0).clamp(360.0, 900.0))
         })
         .unwrap_or(LogicalSize::new(1360.0, 900.0));
     let window = match WindowBuilder::new()
         .with_title(format!("JTokens {}", env!("CARGO_PKG_VERSION")))
         .with_inner_size(fit)
-        .with_min_inner_size(LogicalSize::new(720.0, 480.0))
+        .with_min_inner_size(LogicalSize::new(fit.width.min(720.0), fit.height.min(480.0)))
         .with_visible(!smoke)
         .with_window_icon(<tao::window::Icon as tao::platform::windows::IconExtWindows>::from_resource(1, None).ok())
         .build(&event_loop)

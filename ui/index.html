@@ -63,7 +63,7 @@ header h1 { font-size: 15px; font-weight: 650; margin: 0 6px 0 0; letter-spacing
 label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24px; color: var(--text-secondary); cursor: pointer; }
 .spacer { flex: 1; }
 .dash { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
-.bar2 { display: flex; align-items: center; gap: 12px; min-height: 26px; flex: none; }
+.bar2 { display: flex; align-items: center; gap: 12px; min-height: 30px; flex: none; }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 0; }
 .problems { color: var(--text-secondary); font-size: 12px; text-align: right; max-width: 55%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 10px; color: var(--text-primary); font-size: 12px; max-width: 340px; min-width: 0; }
@@ -167,6 +167,7 @@ footer { flex: none; display: flex; gap: 12px; align-items: center; color: var(-
 .btn.icon { padding: 4px 8px; line-height: 0; display: inline-flex; align-items: center; height: 29px; }
 body.has-max header, body.has-max .bar2, body.has-max .update { position: relative; z-index: 31; }
 body.max-over .card.max { z-index: 32; }
+body.max-over header { z-index: 33; }
 .card.max { position: fixed; inset: var(--max-top, 0) var(--max-r, 16px) 12px var(--max-l, 16px); z-index: 30; padding: 14px 20px; box-shadow: 0 0 0 100vmax var(--surface-0); }
 .card.max .hd { margin-bottom: 10px; }
 .card.max h2 { font-size: 16px; }
@@ -346,9 +347,10 @@ function tickFmt(ticks, v) {
     const top = ticks[ticks.length - 1], [u, sfx] = top >= 1e9 ? [1e9, "B"] : top >= 1e6 ? [1e6, "M"] : top >= 1e4 ? [1e3, "K"] : [1, ""];
     if (!v) return "0";
     let d = 0; while (d < 6) { const x = st / u * 10 ** d; if (Math.abs(x - Math.round(x)) < 1e-6 * Math.max(1, x)) break; d++; }
-    return (v / u).toFixed(d) + sfx;
+    return u === 1 ? v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : (v / u).toFixed(d) + sfx;
   }
   let dec = 0; while (dec < 10) { const x = st * 10 ** dec; if (Math.round(x) >= 1 && Math.abs(x - Math.round(x)) < 1e-6 * x) break; dec++; }
+  if (dec === 1) dec = 2; // money reads $2.50, not $2.5
   return "$" + v.toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 // left margin wide enough for the longest axis label
@@ -399,7 +401,13 @@ window.tkData = function (data) {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   }
   const pn = D.projects.map((x) => baseName(x)), pc = new Map(); for (const n of pn) pc.set(n, (pc.get(n) || 0) + 1);
-  D.projNames = D.projects.map((x, i) => { if (pc.get(pn[i]) < 2) return pn[i]; const parts = x.split(/[\\/]/).filter(Boolean); return parts.slice(-2).join("/"); });
+  D.projNames = pn.slice();
+  for (let depth = 2; depth <= 6; depth++) {
+    const cnt = new Map(); for (const n of D.projNames) cnt.set(n, (cnt.get(n) || 0) + 1);
+    let again = false;
+    D.projNames = D.projNames.map((n, i) => { if (cnt.get(n) < 2) return n; again = true; return D.projects[i].split(/[\\/]/).filter(Boolean).slice(-depth).join("/"); });
+    if (!again) break;
+  }
   const nameCount = new Map(); for (const m of D.models) nameCount.set(m.name, (nameCount.get(m.name) || 0) + 1);
   for (const m of D.models) if (nameCount.get(m.name) > 1 && m.name !== m.id) { m.name += " (" + m.id + ")"; }
   // fixed colors: top 8 models by all-time cost (tokens as tie-break) get slots, rest are Other
@@ -483,7 +491,7 @@ const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):n
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
-  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); overviewDirty = true; if (pricesFor !== D) { renderPrices(); pricesFor = D; } return; } // drawn when Overview comes back
+  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (pricesFor !== D) { renderPrices(); pricesFor = D; } return; } // drawn when Overview comes back
   overviewDirty = false;
   const fk = focusOverride || focusKey(document.activeElement); focusOverride = null;
   if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; } // Sessions follow Measure
@@ -509,7 +517,10 @@ function render() {
     const box = el, k = JSON.stringify([...base.map((v, i) => i === own[box.id] ? null : v), box.id === "models" ? state.modelMode : box.id === "projects" ? state.projMode : 0]);
     el.scrollTop = listKeys.get(el) === undefined || listKeys.get(el) === k ? t : 0; listKeys.set(el, k);
   }
-  if (fk && (document.activeElement === document.body || !document.activeElement)) { const el = document.querySelector(fk); if (el) el.focus({ preventScroll: true }); }
+  if (fk && (document.activeElement === document.body || !document.activeElement)) {
+    const el = document.querySelector(fk) || (fk.startsWith("#") && document.querySelector(fk.split(" ")[0] + ' [tabindex="0"]'));
+    if (el) el.focus({ preventScroll: true });
+  }
   hideAxisText();
   document.querySelectorAll(".card .hd .sub").forEach((e) => { if (e.id !== "hourSub" && e.id !== "priceSub") e.title = e.textContent; });
   if (document.querySelector(".card.max")) placeMax();
@@ -595,12 +606,19 @@ function renderKpis() {
     const arrow = pct > 0 ? "↑ " : "↓ ";
     return `<span class="dl" title="${prevName}: ${fmt(before)}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}`;
   };
+  const perDayCaption = () => {
+    const plain = fullDays < days.size ? "avg of days with use, not today" : "avg of days with use";
+    if (state.range === 1) return "today only";
+    if (days.size === 1 && days.has(todayKey)) return "today so far, no full day yet";
+    if (prev && prev.cost > 0 && !prev.perDay && !noHistory) return plain; // the previous period had no full day to compare
+    return delta(perDay, prev && prev.perDay, fmtUsd, plain);
+  };
   const tiles = [
     ["API cost", fmtUsd(cost), delta(cost, prev && prev.cost, fmtUsd, state.day ? spanLabel() : state.range ? `last ${state.range === 1 ? "day" : state.range + " days"}` : "all time", true), trend && trend.cost],
     ["Tokens", fmtTok(tok), delta(tok, prev && prev.tok, fmtTok, "input, output and cache"), trend && trend.tok],
     ["Requests", fmtInt(reqs), delta(reqs, prev && prev.reqs, fmtInt, "model calls"), trend && trend.reqs],
     ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`, trend && trend.sess],
-    ["Cost per active day", fmtUsd(perDay), state.range === 1 ? "today only" : days.size === 1 && days.has(todayKey) ? "today so far, no full day yet" : prev && prev.cost > 0 && !prev.perDay && !noHistory ? "avg of days with use, not today" : delta(perDay, prev && prev.perDay, fmtUsd, fullDays < days.size ? "avg of days with use, not today" : "avg of days with use"), null],
+    ["Cost per active day", fmtUsd(perDay), perDayCaption(), null],
     [saved < 0 ? "Cache cost" : "Cache saved", fmtUsd(Math.abs(saved)), saved < 0 ? "writes cost more than reads saved" : "est. at list price, after write cost", null, "Reads at the cache rate instead of full input, minus the extra paid to write caches. Base list prices; writes counted as 5-minute writes (1.25x input), so 1-hour writes (2x) would lower it."],
   ];
   $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="${esc(l)}" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v${v.replace(/<[^>]*>/g, "").length > 6 ? " long" : ""}">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div>${t ? spark(t) : ""}</div>`).join("");
@@ -659,7 +677,7 @@ function renderDaily() {
   if (RS) { const k = FD() && RS < FD() ? FD() : RS; const [y, m, d] = k.split("-").map(Number); start = new Date(y, m - 1, d); }
   else {
     let min = null;
-    for (const r of D.rows) if (passes(r, { ignoreDay: true })) { if (!min || r[9] < min) min = r[9]; }
+    for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { if (!min || r[9] < min) min = r[9]; }
     if (!min) { $("#daily").innerHTML = `<div class="empty">${noUsage({ ignoreDay: true }, "No usage in this range.")}</div>`; $("#dailyLegend").innerHTML = ""; return; }
     const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d);
   }
@@ -728,9 +746,11 @@ function renderDaily() {
       if (top && h > 4 && bw > 4) s += `<path d="${roundTop(x, y1, bw, h, running ? 2 : 3)}" fill="${color}"${dim}/>`;
       else s += `<rect x="${x}" y="${y1}" width="${bw}" height="${h}" fill="${color}"${dim}/>`;
     });
-    if (i % labelEvery === 0) { const lx = L + i * slot + slot / 2, lw = 6.4 * dayLabel(b.from).length, end = lx + lw / 2 > W - 2; s += `<text x="${end ? W - 2 : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${dayLabel(b.from)}</text>`; }
+    const lastP = Math.floor((n - 1) / labelEvery) * labelEvery; // the periodic label before the last bar
+    const skipP = i === lastP && lastP !== n - 1 && (n - 1 - lastP) * slot < labelW;
+    if ((i % labelEvery === 0 && !skipP) || i === n - 1) { const lx = L + i * slot + slot / 2, lw = 6.4 * dayLabel(b.from).length, end = lx + lw / 2 > W - 2; s += `<text x="${end ? W - 2 : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${dayLabel(b.from)}</text>`; }
     if (!running && totals[i] > 0 && slot >= Math.max(34, 8 + 6.4 * fmtVal(totals[i]).length)) s += `<text x="${L + i * slot + slot / 2}" y="${y(totals[i]) - 5}" text-anchor="middle" class="vl">${fmtVal(totals[i])}</text>`;
-    const pick = n > 1 && (running || totals[i] > 0);
+    const pick = n > 1 && totals[i] > 0;
     const a11y = ` tabindex="-1" role="${pick ? "button" : "img"}"${pick ? ` aria-pressed="${sel(b)}"` : ""} aria-label="${esc(name(b))}: ${tipVal(tots[i])}${running || b.to === todayK ? " so far" : ""}${segs.length > 1 ? ". " + esc(segs.slice().sort((p, q) => q[2] - p[2]).map(([m, , v]) => (m === -1 ? "Other models" : D.models[m].name) + " " + tipVal(v)).join(", ")) : ""}"`;
     s += `<rect class="hit"${pick ? ` data-day="${b.from}" data-to="${b.to}"` : ""} data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
   });
@@ -885,7 +905,8 @@ function renderModelTrend() {
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Usage per model ${hourly ? "per hour" : "per day"}. Arrow keys move between ${hourly ? "hours" : "days"}.">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
   const every = Math.ceil(n / Math.max(2, Math.floor(plotW / (hourly ? 34 : Math.max(58, 14 + 6.6 * Math.max(...slots.map((k) => dayLabel(k).length)))))));
-  slots.forEach((k, i) => { if (i % every === 0) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="${n > 1 && i === n - 1 ? "end" : "middle"}">${label(i)}</text>`; });
+  const lastP = Math.floor((n - 1) / every) * every, gapX = n > 1 ? (x(n - 1) - x(lastP)) : 0, lw2 = hourly ? 34 : 58;
+  slots.forEach((k, i) => { if ((i % every === 0 && !(i === lastP && lastP !== n - 1 && gapX < lw2)) || i === n - 1) s += `<text x="${x(i)}" y="${H - 6}" text-anchor="${n > 1 && i === n - 1 ? "end" : "middle"}">${label(i)}</text>`; });
   // the picked days, shaded like on the daily chart
   if (!hourly && state.day) slots.forEach((k, i) => { if (inSpan(k)) { const hw = plotW / Math.max(1, n - 1) / 2, x0 = n === 1 ? L : Math.max(L, x(i) - hw), x1 = n === 1 ? L + plotW : Math.min(L + plotW, x(i) + hw); s += `<rect class="selected-band" x="${x0}" y="${T}" width="${Math.max(2, x1 - x0)}" height="${plotH}"/>`; } });
   // draw the biggest model last so it sits on top
@@ -934,11 +955,14 @@ function renderHourly() {
   const y = (v) => T + plotH - v / top * plotH;
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Usage by hour of day. Arrow keys move between hours.">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - 4}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
+  const tk = dayKey(new Date()), nowH = new Date().getHours();
+  const onlyToday = (state.range === 1 && !state.day) || (!!state.day && state.day[0] === tk && state.day[1] === tk);
   vals.forEach((v, h) => {
     const x = L + h * slot + (slot - bw) / 2, hh = y(0) - y(v);
+    if (onlyToday && h > nowH) { if (h % every === 0) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`; return; } // not yet
     if (hh > 0) s += hh > 4 ? `<path class="bar" d="${roundTop(x, y(v), bw, hh, 3)}" fill="var(--accent)"/>` : `<rect class="bar" x="${x}" y="${y(v)}" width="${bw}" height="${hh}" fill="var(--accent)"/>`;
     if (h % every === 0) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`;
-    s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59: ${tipVal(v)}"/>`;
+    s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59: ${tipVal(v)}${onlyToday && h === nowH ? " so far" : ""}"/>`;
   });
   s += `</svg>`;
   $("#hourly").innerHTML = s;
@@ -970,7 +994,7 @@ function renderHeat() {
     for (let h = 0; h < 24; h++) {
       const i = wd * 24 + h, x = L + h * cw, yy = T + wd * ch, a = v[i] / max;
       s += `<rect aria-hidden="true" x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${heatOp(a)}"/>`;
-      s += `<rect class="hit" role="gridcell" data-i="${i}" x="${x}" y="${yy}" width="${cw}" height="${ch}" tabindex="${i === heatFocus ? 0 : -1}" aria-label="${WEEKDAYS[wd]} ${pad(h)}:00: ${fmtVal(v[i])}"/>`;
+      s += `<rect class="hit" role="gridcell" data-i="${i}" x="${x}" y="${yy}" width="${cw}" height="${ch}" tabindex="${i === heatFocus ? 0 : -1}" aria-label="${WEEKDAYS[wd]} ${hourName(h)}, ${pad(h)}:00: ${tipVal(v[i])}"/>`;
     }
     s += `</g>`;
   }
@@ -1036,7 +1060,7 @@ function renderSessions() {
       const unpriced = a.cost === 0 && [...a.models.keys()].every((m) => !D.models[m].priced);
       const title = sessTitle(si);
       return `<tr data-sess="${si}" tabindex="-1" aria-selected="${state.sess === si}" aria-description="${esc(D.projects[s[2]])}" title="${esc(D.projects[s[2]])}\n${esc(s[1])}">
-        <td class="wrap">${esc(title)}</td>${showTool ? `<td class="muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted">${esc(projName(s[2]))}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
+        <td class="wrap" title="${esc(title)}">${esc(title)}</td>${showTool ? `<td class="muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted">${esc(projName(s[2]))}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
         <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${unpriced ? `<span class="muted" title="No public price for these models">n/a</span>` : usd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > state.sessCap ? `<div class="note">Showing ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessMore">Show ${fmtInt(Math.min(300, agg.size - state.sessCap))} more</button>${state.sessCap > 300 ? ` <button class="btn" type="button" data-showall="sessTop">Show top 300</button>` : ""}</div>` : state.sessCap > 300 ? `<div class="note">Showing all ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessTop">Show top 300</button></div>` : ""}`;
@@ -1216,7 +1240,7 @@ document.addEventListener("click", (e) => {
     const g = seg.parentElement.id;
     if (seg.getAttribute("aria-pressed") === "true") return; // already selected: nothing changes, filters stay
     seg.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === seg));
-    if (g === "srcSeg") { state.src = seg.dataset.v; if (state.day && FD() && state.day[1] < FD()) state.day = null; state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
+    if (g === "srcSeg") { state.src = seg.dataset.v; if (state.day && FD()) { if (state.day[1] < FD()) state.day = null; else if (state.day[0] < FD()) state.day = [FD(), state.day[1]]; } state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "metricSeg") state.metric = seg.dataset.v;
     if (g === "dailyMode") { state.dailyMode = seg.dataset.v; renderDaily(); return hideAxisText(); }
@@ -1341,7 +1365,7 @@ function expandCard(card) {
   if (open) { open.classList.remove("max"); const b = open.querySelector("[data-expand]"); b.innerHTML = ICON_EXPAND; b.title = "Full screen (Esc to close)"; b.setAttribute("aria-label", "Full screen: " + b.dataset.what); }
   if (card && card !== open) { if (!open) pageScroll = window.scrollY; window.scrollTo(0, 0); card.classList.add("max"); placeMax(); const b = card.querySelector("[data-expand]"); b.innerHTML = ICON_SHRINK; b.title = "Close full screen (Esc)"; b.setAttribute("aria-label", "Close full screen: " + b.dataset.what); b.focus(); }
   const max = document.querySelector(".card.max");
-  document.body.classList.toggle("has-max", !!max); if (!max) document.body.classList.remove("max-over");
+  document.body.classList.toggle("has-max", !!max); if (!max) { document.body.classList.remove("max-over"); $(".bar2").inert = false; $("#update").inert = false; }
   // only the open card (and the controls above it) take focus
   document.querySelectorAll(".board .card, .kpis, footer").forEach((el) => { el.inert = !!max && el !== max; });
   if (!max && open) { window.scrollTo(0, pageScroll); open.querySelector("[data-expand]").focus({ preventScroll: true }); }
@@ -1354,7 +1378,8 @@ function expandCard(card) {
 function placeMax() {
   const st = document.documentElement.style, bar = $(".bar2").getBoundingClientRect();
   const want = Math.max(8, Math.ceil(bar.bottom + 8)), cap = Math.max(8, innerHeight - 240);
-  st.setProperty("--max-top", Math.min(want, cap) + "px"); document.body.classList.toggle("max-over", want > cap); // tall banners or filters: the card covers them rather than vanishing
+  st.setProperty("--max-top", Math.min(want, cap) + "px"); document.body.classList.toggle("max-over", want > cap);
+  $(".bar2").inert = want > cap; $("#update").inert = want > cap; // tall banners or filters: the card covers them rather than vanishing
   // line up with the filter line, so on very wide screens the card stays in the app column
   st.setProperty("--max-l", Math.max(8, Math.floor(bar.left)) + "px"); st.setProperty("--max-r", Math.max(8, Math.floor(innerWidth - bar.right)) + "px");
 }
@@ -1420,8 +1445,9 @@ window.addEventListener("blur", () => { swallowClick = false; if (drag) { const 
 
 function requestScan(manual) {
   if (!window.ipc) return;
+  if (scanning && manual === true && Date.now() - scanStartedAt > 60000) scanning = false; // stuck for a minute: let Refresh try again
   if (scanning) { if (manual === true && !manualScan) { queuedManual = true; $("#refresh").setAttribute("aria-disabled", "true"); $("#scaninfo").textContent = "Scanning…"; } return; }
-  scanning = true;
+  scanning = true; scanStartedAt = Date.now();
   if (manual === true) $("#refresh").setAttribute("aria-disabled", "true"); // aria-disabled keeps keyboard focus on it
   // a manual Refresh shows that it is working; Live ticks stay quiet so the window does not flicker
   if (manual === true) { manualScan = true; $("#scaninfo").setAttribute("aria-live", "polite"); $("#scaninfo").textContent = "Scanning…"; $("#scaninfo").setAttribute("aria-busy", "true"); }
@@ -1429,7 +1455,7 @@ function requestScan(manual) {
   const started = ++scanSeq;
   if (manual === true || !D) setTimeout(() => { if (scanning && scanSeq === started) $("#scaninfo").textContent = "Still scanning. Large or slow log folders can take a while."; }, 30000);
 }
-let scanSeq = 0;
+let scanSeq = 0, scanStartedAt = 0;
 $("#refresh").addEventListener("click", () => requestScan(true));
 // Live skips ticks while the window is minimized and catches up when it comes back
 document.addEventListener("visibilitychange", () => { if (!document.hidden && $("#live").checked) requestScan(); });

@@ -48,6 +48,7 @@ html, body { margin: 0; height: 100%; background: var(--surface-0); color: var(-
 button, select, input { font: inherit; color: inherit; }
 .app { height: 100vh; display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 8px; max-width: 1800px; margin: 0 auto; }
 header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
+header .tools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; margin-left: auto; }
 header h1 { font-size: 15px; font-weight: 650; margin: 0 6px 0 0; letter-spacing: .2px; }
 .seg, .tabs { display: inline-flex; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
 .seg button, .tabs button { background: none; border: 0; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; }
@@ -62,7 +63,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 .dash { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .bar2 { display: flex; align-items: center; gap: 12px; min-height: 26px; flex: none; }
 .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 0; }
-.problems { color: var(--text-secondary); font-size: 12px; text-align: right; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.problems { color: var(--text-secondary); font-size: 12px; text-align: right; max-width: 55%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 6px 2px 10px; color: var(--text-primary); font-size: 12px; }
 .chip button { border: 0; background: none; cursor: pointer; color: var(--text-muted); padding: 4px 6px; margin: -4px -4px -4px 0; font-size: 14px; line-height: 1; border-radius: 4px; }
 .chip button:hover { color: var(--text-primary); }
@@ -78,7 +79,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--te
 /* narrow cards drop the hint so the title and buttons fit */
 @container (max-width: 300px) { .card .hd .sub { display: none; } }
 @container (max-width: 520px) { #c-daily .hd .sub { display: none; } }
-.card .hd { display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; }
+.card .hd { user-select: none; display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 6px; }
 .card h2 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; max-width: 100%; }
 .card .hd > .seg, .card .hd > .xp { flex: none; }
 .card .hd .sub { flex: 0 1 auto; }
@@ -225,17 +226,18 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
       <button data-v="cost" aria-pressed="true">API cost</button>
       <button data-v="tokens">Tokens</button>
     </div>
-    <div class="spacer"></div>
+    <div class="tools">
     <label class="chk"><input type="checkbox" id="live"> Live</label>
     <button class="btn" id="refresh">Refresh</button>
     <button class="btn" id="theme" title="Switch light or dark">Light theme</button>
     <button class="btn icon" id="fs" title="Full screen window (F11)" aria-label="Full screen window" aria-pressed="false"></button>
+    </div>
   </header>
 
   <div class="update" id="update" role="status" hidden></div>
 
   <section id="tab-overview" class="dash" role="tabpanel" aria-labelledby="tab-btn-overview">
-    <div class="bar2"><div class="filters" id="filters"></div><div class="problems" id="problems" aria-live="polite"></div></div>
+    <div class="bar2"><div class="filters" id="filters"></div><div class="problems" id="problems" aria-live="polite">Scanning your logs…</div></div>
     <div class="kpis" id="kpis"></div>
     <div class="board">
       <div class="card" id="c-daily">
@@ -305,6 +307,8 @@ let colorOf = [];
 let priceOf = [];        // model index -> its list price row, or null
 let dayOfHour = new Map();
 let rendered = false;
+let scanFailed = false, manualScan = false, scanning = false, renderedHour = 0;
+let pricesFor = null, focusOverride = null, lastMetric = "cost";
 
 // ---------- formatting
 const fmtUsd = (v) => v < 0 ? "−" + fmtUsd(-v) : v >= 999.5 ? "$" + Math.round(v).toLocaleString() : v >= 99.995 ? "$" + v.toFixed(0) : v >= 0.9995 ? "$" + v.toFixed(2) : v >= 0.0005 ? "$" + v.toFixed(3) : v > 0 ? "<$0.001" : "$0";
@@ -320,13 +324,15 @@ const dayLabel = (k) => { const [y, m, d] = k.split("-").map(Number); return new
 const dtLabel = (ts) => { if (!ts) return ""; const d = new Date(ts * 1000); return d.toLocaleString(undefined, d.getFullYear() === THIS_YEAR ? { month: "short", day: "numeric", hour: "numeric" } : { year: "numeric", month: "short", day: "numeric", hour: "numeric" }); };
 // axis labels show only the decimals the tick step needs
 function tickFmt(ticks, v) {
-  if (state.metric !== "cost") return fmtTok(v);
+  if (state.metric !== "cost") return fmtTok(v).replace(/\.0+(?=[KMB]$)/, "");
   const st = ticks[1] - ticks[0];
-  let dec = 0; while (dec < 6 && Math.abs(st * 10 ** dec - Math.round(st * 10 ** dec)) > 1e-6) dec++;
+  let dec = 0; while (dec < 10) { const x = st * 10 ** dec; if (Math.round(x) >= 1 && Math.abs(x - Math.round(x)) < 1e-6 * x) break; dec++; }
   return "$" + v.toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 // left margin wide enough for the longest axis label
 const axisL = (ticks) => Math.max(44, Math.ceil(12 + 6.6 * Math.max(...ticks.map((t) => tickFmt(ticks, t).length))));
+// a table column of costs uses whole dollars when its biggest value is $100 or more, so decimals line up
+const colUsd = (max) => max >= 100 ? (v) => v >= 1 ? "$" + Math.round(v).toLocaleString() : fmtUsd(v) : fmtUsd;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const baseName = (p) => { const parts = p.split(/[\\/]/).filter(Boolean); return parts.length ? parts[parts.length - 1] : p; };
 
@@ -341,9 +347,9 @@ window.tkData = function (data) {
   const wasFailed = scanFailed; scanFailed = false;
   $("#scaninfo").removeAttribute("aria-busy");
   // Live asks every 10 s; when no log file changed, only the scan line needs updating
-  const quiet = D && !manualScan && data.scan && data.scan.parsed === 0 && data.scan.files === D.scan.files && data.rows.length === D.rows.length && rangeStart() === RS && Math.floor(Date.now() / 3600000) === renderedHour;
+  const quiet = D && !manualScan && data.scan && data.scan.parsed === 0 && data.scan.files === D.scan.files && data.rows.length === D.rows.length && JSON.stringify(data.sessions) === JSON.stringify(D.sessions) && rangeStart() === RS && Math.floor(Date.now() / 3600000) === renderedHour;
   manualScan = false;
-  if (quiet) { D.scan = data.scan; showScanInfo(); $("#refresh").disabled = false; if (wasFailed) renderKpis(); return; }
+  if (quiet) { D.scan = data.scan; showScanInfo(); scanDone(); if (wasFailed) renderKpis(); return; }
   // filters hold array indices; carry them over by id, since a rescan can reorder
   const keep = D ? { m: state.model !== null ? D.models[state.model].src + ":" + D.models[state.model].id : null, s: state.sess !== null ? D.sessions[state.sess][1] : null, p: state.proj !== null ? D.projects[state.proj] : null } : null;
   const fe = document.activeElement, feHost = fe && fe.closest && fe.closest("[id]");
@@ -384,7 +390,7 @@ window.tkData = function (data) {
   showScanInfo();
   const lastCodex = D.rows.reduce((m, r) => D.models[r[0]].src === 1 ? Math.max(m, r[2]) : m, 0);
   D.lastBySrc = [D.rows.reduce((m, r) => D.models[r[0]].src === 0 ? Math.max(m, r[2]) : m, 0), lastCodex];
-  $("#refresh").disabled = false;
+  scanDone();
   try { render(); } finally { $("#refresh").disabled = !!window.__TK_STATIC; }
   if (!rendered) {
     rendered = true;
@@ -392,13 +398,13 @@ window.tkData = function (data) {
   }
 };
 
+function scanDone() { scanning = false; $("#refresh").disabled = false; $("#refresh").removeAttribute("aria-disabled"); }
 function showScanInfo() {
   const s = D.scan;
   const took = s.ms < 1000 ? Math.round(s.ms) + " ms" : (s.ms / 1000).toFixed(2) + " s";
   $("#scaninfo").textContent = `${(s.bytes / 1e9).toFixed(2)} GB scanned in ${took}`;
   $("#scaninfo").title = `${fmtInt(s.files)} log files, ${fmtInt(s.events)} requests, ${fmtInt(s.parsed)} files read this scan${s.avx2 ? ", AVX2" : ""}`;
 }
-let scanFailed = false, manualScan = false, renderedHour = 0;
 function selfCheck() {
   return {
     rows: D.rows.length, models: D.models.length, sessions: D.sessions.length,
@@ -467,7 +473,6 @@ function render() {
   // Live redraws every 10 s; put the tooltip back if the mouse is still over a chart
   if (hadTip && lastMouse) { const el = document.elementFromPoint(lastMouse.clientX, lastMouse.clientY); if (el) moveTip({ target: el, clientX: lastMouse.clientX, clientY: lastMouse.clientY }); }
 }
-let pricesFor = null, focusOverride = null, lastMetric = "cost";
 
 const inSpan = (k) => !!state.day && k >= state.day[0] && k <= state.day[1];
 const spanLabel = () => state.day[0] === state.day[1] ? dayLabel(state.day[0]) : dayLabel(state.day[0]) + " to " + dayLabel(state.day[1]);
@@ -516,7 +521,11 @@ function renderKpis() {
       if (!passes(r, { win })) continue;
       prev.cost += r[7]; prev.tok += r[3] + r[4] + r[5] + r[6]; prev.reqs += r[8]; prev.days.add(r[9]);
     }
-    prev.perDay = prev.days.size ? prev.cost / prev.days.size : 0;
+    // the previous window ends partway through its last day; leave that day out, as today is left out above
+    const endKey = dayKey(end);
+    let endCost = 0; if (prev.days.has(endKey) && prev.days.size > 1) for (const r of D.rows) if (r[9] === endKey && passes(r, { win })) endCost += r[7];
+    const prevFull = prev.days.has(endKey) && prev.days.size > 1 ? prev.days.size - 1 : prev.days.size;
+    prev.perDay = prevFull ? (prev.cost - endCost) / prevFull : 0;
     if (state.range > 1) {
       const keys = []; for (let i = 0; i < state.range; i++) { const k = dayKey(new Date(y, m - 1, d + i)); if (!D.firstDay || k >= D.firstDay) keys.push(k); }
       const at = new Map(keys.map((k, i) => [k, i]));
@@ -531,7 +540,7 @@ function renderKpis() {
   }
   const prevName = state.range === 1 ? "this time yesterday" : `prev ${state.range} days`;
   // the previous period starts before the oldest kept log: no fair comparison
-  const noHistory = prev && rs && Math.floor(new Date(+rs.slice(0, 4), +rs.slice(5, 7) - 1, +rs.slice(8, 10) - state.range).getTime() / 3600000) < D.firstHour;
+  const noHistory = prev && rs && D.firstDay && Math.floor(new Date(+rs.slice(0, 4), +rs.slice(5, 7) - 1, +rs.slice(8, 10) - state.range).getTime() / 3600000) < D.firstHour;
   const prevEmpty = prev && !prev.tok && !prev.reqs;
   const delta = (now, before, fmt, fallback, first) => {
     if (!prev || (!now && !before)) return fallback;
@@ -560,10 +569,10 @@ function renderKpis() {
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
   if ((noHistory || (rs && D.firstDay && rs < D.firstDay)) && !state.day) notes.push(`Logs on this computer start ${dayLabel(D.firstDay)}, so there is ${rs < D.firstDay ? "no data before then and " : ""}no earlier period to compare.`);
-  $("#problems").title = "";
   if (scanFailed) notes.unshift("The last scan failed. These numbers are from the scan before it.");
   if (unpricedTok) notes.push(`${fmtTok(unpricedTok)} tokens from models with no public price are not in the cost.`);
-  $("#problems").textContent = notes.join(" "); $("#problems").title = notes.join("\n");
+  const txt = notes.join(" ");
+  if ($("#problems").textContent !== txt) { $("#problems").textContent = txt; $("#problems").title = notes.join("\n"); }
 }
 
 // tiny trend line for a stat tile
@@ -571,8 +580,9 @@ function spark(vals) {
   const max = Math.max(...vals);
   if (!(max > 0)) return "";
   const w = 72, h = 24, n = vals.length, x = (i) => (i / (n - 1)) * w, y = (v) => h - 2 - (v / max) * (h - 4);
-  const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polygon points="0,${h} ${pts} ${w},${h}" fill="var(--accent)" fill-opacity=".14"/><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+  const p = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`), pts = p.join(" ");
+  // the last point is today, which is not over: draw that step dashed
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polygon points="0,${h} ${pts} ${w},${h}" fill="var(--accent)" fill-opacity=".14"/><polyline points="${p.slice(0, -1).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/><polyline points="${p.slice(-2).join(" ")}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="2 2" stroke-opacity=".7"/></svg>`;
 }
 
 function topModelsFor(rows) {
@@ -599,6 +609,7 @@ function legendHtml(models) {
 }
 
 function renderDaily() {
+  if (!D) return;
   // the days in range; long ranges fold into weeks so bars stay readable
   let start;
   if (RS) { const k = D.firstDay && RS < D.firstDay ? D.firstDay : RS; const [y, m, d] = k.split("-").map(Number); start = new Date(y, m - 1, d); }
@@ -614,7 +625,7 @@ function renderDaily() {
   const running = state.dailyMode === "total";
   const { W, H } = boxOf("#daily"), B = 22, T = running ? 8 : 18; // room for the tallest bar's value label
   const plotH = H - B - T;
-  const step = (W - 52 - (running ? 8 : 64)) / days.length < 4 ? 7 : 1;
+  const step = (W - 52 - (running ? 8 : 64)) / days.length < 8 ? 7 : 1;
   $("#dailyMode [data-v=day]").textContent = step === 7 ? "Per week" : "Per day";
   $("#dailyHint").textContent = days.length === 1 ? "Today so far" : step === 7 ? "Click a week, or drag across weeks, to filter" : "Click a day, or drag across days, to filter";
   $("#dailyTitle").textContent = (step === 7 ? "Weekly " : "Daily ") + (state.metric === "cost" ? "API cost by model" : "tokens by model");
@@ -663,7 +674,7 @@ function renderDaily() {
     const dim = state.day && !sel(b) ? ' opacity="0.35"' : "";
     segs.forEach(([m, a, v], j) => {
       const y0 = y(a), y1 = y(a + v);
-      const h = Math.max(0, y0 - y1 - (j > 0 && !running && bw > 3 ? 2 : 0));
+      const h = Math.max(0, y0 - y1 - (j > 0 && !running && bw >= 6 ? 2 : 0));
       const top = j === segs.length - 1;
       const color = colorVar(m);
       if (h <= 0) return;
@@ -739,6 +750,7 @@ function niceTicks(max, count) {
 }
 
 function renderModels() {
+  if (!D) return;
   const trend = state.modelMode === "trend";
   $("#models").hidden = trend; $("#modelTrend").hidden = !trend; $("#trendLegend").hidden = !trend;
   if (!trend) $("#modelSub").textContent = "Click to filter";
@@ -786,6 +798,8 @@ function renderModelTrend() {
   const hourly = keys.length === 1;
   $("#modelSub").textContent = hourly ? "By hour" : card.classList.contains("max") ? "Per day, click a name to filter" : "Per day";
   const slots = hourly ? Array.from({ length: 24 }, (_, h) => h) : keys;
+  // hours that have not happened yet are not zero use: lines stop at now
+  const upto = hourly && keys[0] === dayKey(new Date()) ? new Date().getHours() + 1 : slots.length;
   const at = new Map(keys.map((k, i) => [k, i]));
   // a selected model keeps its own line even when it would fall under Other
   const series = new Map(); const used = [];
@@ -824,7 +838,7 @@ function renderModelTrend() {
   // draw the biggest model last so it sits on top
   for (const m of [...order].reverse()) {
     const c = colorVar(m);
-    const pts = series.get(m).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const pts = series.get(m).slice(0, upto).map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
     const faded = state.model !== null && state.model !== m ? ' stroke-opacity="0.25"' : "";
     s += `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="${state.model === m ? 2.5 : 1.75}" stroke-linejoin="round" stroke-linecap="round"${faded}/>`;
     if (n <= 2) series.get(m).forEach((v, i) => { if (v > 0) s += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${c}"${faded ? ' fill-opacity="0.25"' : ""}/>`; });
@@ -845,8 +859,9 @@ function renderModelTrend() {
 }
 
 function renderHourly() {
+  if (!D) return;
   const week = state.hourMode === "week";
-  $("#hourTitle").textContent = week ? "Week by hour, local" : "By hour, local time"; // the subtitle hides in narrow cards
+  $("#hourTitle").textContent = week ? "Week by hour" : "By hour";
   $("#hourSub").textContent = (state.day ? spanLabel() + ", local time" : "Local time" + (week ? "" : ", whole range")) + (week ? ", total per hour, stronger is more" : "");
   if (week) return renderHeat();
   const vals = new Array(24).fill(0);
@@ -883,7 +898,7 @@ function renderHeat() {
   }
   const max = Math.max(...v);
   if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">${noUsage({}, "No usage.")}</div>`; return; }
-  if (heatFocus === null || !v[heatFocus]) heatFocus = v.indexOf(max);
+  if (heatFocus === null) heatFocus = v.indexOf(max);
   const { W, H } = boxOf("#hourly"), L = 34, B = 20, T = 2;
   const cw = (W - L - 2) / 24, ch = Math.min((H - B - T - 24) / 7, cw * 2.4), gap = cw > 10 ? 2 : 1;
   const every = cw < 13 ? 6 : cw > 34 ? 2 : 3;
@@ -892,7 +907,7 @@ function renderHeat() {
     s += `<text x="${L - 6}" y="${T + wd * ch + ch / 2 + 4}" text-anchor="end">${WEEKDAYS[wd]}</text><g role="row">`;
     for (let h = 0; h < 24; h++) {
       const i = wd * 24 + h, x = L + h * cw, yy = T + wd * ch, a = v[i] / max;
-      s += `<rect x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${a ? (0.1 + 0.9 * Math.pow(a, 0.75)).toFixed(3) : 1}"/>`;
+      s += `<rect x="${x}" y="${yy}" width="${cw - gap}" height="${ch - gap}" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${a ? (0.25 + 0.75 * Math.pow(a, 0.75)).toFixed(3) : 1}"/>`;
       s += `<rect class="hit" role="gridcell" data-i="${i}" x="${x}" y="${yy}" width="${cw}" height="${ch}" tabindex="${i === heatFocus ? 0 : -1}" aria-label="${WEEKDAYS[wd]} ${pad(h)}:00: ${fmtVal(v[i])}"/>`;
     }
     s += `</g>`;
@@ -902,7 +917,7 @@ function renderHeat() {
     // a less-to-more key under the grid when there is room
     const ky = T + 7 * ch + 24, kx = Math.max(L + 30, W - 2 - 5 * 14 - 120);
     s += `<text x="${kx - 6}" y="${ky + 10}" text-anchor="end">Less</text>`;
-    [0, .25, .5, .75, 1].forEach((a, i) => s += `<rect x="${kx + i * 14}" y="${ky}" width="12" height="12" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${a ? (0.1 + 0.9 * Math.pow(a, 0.75)).toFixed(3) : 1}"/>`);
+    [0, .25, .5, .75, 1].forEach((a, i) => s += `<rect x="${kx + i * 14}" y="${ky}" width="12" height="12" rx="2" fill="${a ? "var(--accent)" : "var(--surface-2)"}" fill-opacity="${a ? (0.25 + 0.75 * Math.pow(a, 0.75)).toFixed(3) : 1}"/>`);
     s += `<text x="${kx + 5 * 14 + 4}" y="${ky + 10}">More (max ${fmtVal(max)})</text>`;
   }
   s += `</svg>`;
@@ -944,6 +959,7 @@ function renderSessions() {
   // the Tool column only helps when both tools are in the list
   const showTool = state.src === "all" && D.lastBySrc[0] > 0 && D.lastBySrc[1] > 0;
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
+  const usd = colUsd(maxCost);
   const arrow = (k) => state.sort === k ? (state.sortDir < 0 ? " ↓" : " ↑") : "";
   const sortAttr = (k) => ` data-sort="${k}" tabindex="0" aria-sort="${state.sort === k ? (state.sortDir < 0 ? "descending" : "ascending") : "none"}"`;
   $("#sessions").innerHTML = `<table role="grid" aria-label="Sessions"><thead><tr>
@@ -955,7 +971,7 @@ function renderSessions() {
       const title = sessTitle(si);
       return `<tr data-sess="${si}" tabindex="-1" aria-selected="${state.sess === si}" aria-description="${esc(D.projects[s[2]])}" title="${esc(D.projects[s[2]])}\n${esc(s[1])}">
         <td class="wrap">${esc(title)}</td>${showTool ? `<td class="muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted">${esc(baseName(D.projects[s[2]]))}</td><td>${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
-        <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${fmtUsd(a.cost)}</td></tr>`;
+        <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${usd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > state.sessCap ? `<div class="note">Showing ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessMore">Show ${fmtInt(Math.min(300, agg.size - state.sessCap))} more</button>${state.sessCap > 300 ? ` <button class="btn" type="button" data-showall="sessTop">Show top 300</button>` : ""}</div>` : state.sessCap > 300 ? `<div class="note">Showing all ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessTop">Show top 300</button></div>` : ""}`;
   $("#sessSub").textContent = agg.size > state.sessCap ? `Top ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)}, click a row to filter` : "Click a row to filter, a column to sort";
@@ -1009,6 +1025,7 @@ function renderProjMap(list) {
 const dbar = (v, max) => ` style="--w:${Math.max(0, Math.min(100, v / max * 100)).toFixed(1)}%"`;
 
 function renderProjects() {
+  if (!D) return;
   const agg = new Map();
   for (const r of D.rows) {
     if (!passes(r, { ignoreProj: true })) continue;
@@ -1020,13 +1037,14 @@ function renderProjects() {
   const list = all.slice(0, state.projAll ? Infinity : 200);
   if (state.proj !== null && !list.some(([p]) => p === state.proj)) { const it = all.find(([p]) => p === state.proj); if (it) list.push(it); }
   const pmax = Math.max(...list.map(([, a]) => state.metric === "cost" ? a.cost : a.tok), 1e-9);
+  const usd = colUsd(Math.max(0, ...list.map(([, a]) => a.cost)));
   const map = state.projMode === "map";
   $("#projects").hidden = map; $("#projMap").hidden = !map;
   if (map) return renderProjMap(all);
   if (!list.length) { $("#projects").innerHTML = `<div class="empty">No projects.</div>`; return; }
   $("#projects").innerHTML = `<table role="grid" aria-label="Projects"><thead><tr><th>Project</th><th class="num">Sessions</th><th class="num">${state.metric === "cost" ? "API cost" : "Tokens"}</th></tr></thead><tbody>
     ${list.map(([p, a]) => `<tr data-proj="${p}" tabindex="-1" aria-description="${esc(D.projects[p])}" aria-selected="${state.proj === p}" title="${esc(D.projects[p])}
-${fmtTok(a.tok)} tokens, ${fmtUsd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? fmtUsd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
+${fmtTok(a.tok)} tokens, ${fmtUsd(a.cost)}"><td class="wrap">${esc(baseName(D.projects[p]))}</td><td class="num">${a.sess.size}</td><td class="num db"${dbar(state.metric === "cost" ? a.cost : a.tok, pmax)}>${state.metric === "cost" ? usd(a.cost) : fmtTok(a.tok)}</td></tr>`).join("")}
   </tbody></table>${all.length > 200 && !state.projAll ? `<div class="note">Top 200 of ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projAll">Show all</button></div>` : state.projAll && all.length > 200 ? `<div class="note">Showing all ${fmtInt(all.length)} projects. <button class="btn" type="button" data-showall="projAll">Show top 200</button></div>` : ""}`;
   rove("#projects", "tbody tr");
 }
@@ -1052,7 +1070,7 @@ function rove(hostSel, itemSel) {
   const host = $(hostSel); host.dataset.rove = itemSel;
   const items = host.querySelectorAll(itemSel);
   if (!items.length) return;
-  const want = (roveAt[host.id] && host.querySelector(roveAt[host.id])) || host.querySelector(`${itemSel}[aria-selected="true"], ${itemSel}[aria-pressed="true"], ${itemSel}.sel`) || items[0];
+  const want = (roveAt[host.id] && host.querySelector(roveAt[host.id])) || host.querySelector(itemSel.split(",").map((x) => `${x.trim()}[aria-selected="true"], ${x.trim()}[aria-pressed="true"], ${x.trim()}.sel`).join(", ")) || items[0];
   for (const el of items) el.tabIndex = el === want ? 0 : -1;
 }
 const tip = $("#tip");
@@ -1189,6 +1207,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "F11") { e.preventDefault(); return setFullscreen(!isFullscreen); }
   if (e.key === "Escape") {
+    if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; return; }
     if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; }
     if (document.querySelector(".card.max")) return expandCard(null);
     if (!$("#tab-overview").hidden && (state.day || state.model !== null || state.proj !== null || state.sess !== null)) { Object.assign(state, { day: null, model: null, proj: null, sess: null }); return render(); }
@@ -1204,15 +1223,16 @@ document.querySelectorAll(".board .card .hd").forEach((hd) => {
   const what = hd.querySelector("h2").textContent.replace(/^Daily .*/, "Daily chart");
   hd.insertAdjacentHTML("beforeend", `<button class="xp" type="button" data-expand data-what="${esc(what)}" title="Full screen (Esc to close)" aria-label="Full screen: ${esc(what)}">${ICON_EXPAND}</button>`);
 });
+let pageScroll = 0;
 function expandCard(card) {
   const open = document.querySelector(".card.max");
   if (open) { open.classList.remove("max"); const b = open.querySelector("[data-expand]"); b.innerHTML = ICON_EXPAND; b.title = "Full screen (Esc to close)"; b.setAttribute("aria-label", "Full screen: " + b.dataset.what); }
-  if (card && card !== open) { window.scrollTo(0, 0); card.classList.add("max"); placeMax(); const b = card.querySelector("[data-expand]"); b.innerHTML = ICON_SHRINK; b.title = "Close full screen (Esc)"; b.setAttribute("aria-label", "Close full screen: " + b.dataset.what); b.focus(); }
+  if (card && card !== open) { if (!open) pageScroll = window.scrollY; window.scrollTo(0, 0); card.classList.add("max"); placeMax(); const b = card.querySelector("[data-expand]"); b.innerHTML = ICON_SHRINK; b.title = "Close full screen (Esc)"; b.setAttribute("aria-label", "Close full screen: " + b.dataset.what); b.focus(); }
   const max = document.querySelector(".card.max");
   document.body.classList.toggle("has-max", !!max);
   // only the open card (and the controls above it) take focus
   document.querySelectorAll(".board .card, .kpis, footer").forEach((el) => { el.inert = !!max && el !== max; });
-  if (!max && open) open.querySelector("[data-expand]").focus();
+  if (!max && open) { window.scrollTo(0, pageScroll); open.querySelector("[data-expand]").focus({ preventScroll: true }); }
   // Last active only shows in full screen; do not leave the list sorted by a hidden column
   if (open && open.id === "c-sessions" && state.sort === "last" && open !== max) { state.sort = state.metric === "cost" ? "cost" : "tokens"; state.sortDir = -1; renderSessions(); }
   tip.style.display = "none";
@@ -1279,13 +1299,15 @@ document.addEventListener("mouseup", () => {
 window.addEventListener("blur", () => { if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; if (p) render(); } });
 
 function requestScan(manual) {
-  if (!window.ipc || $("#refresh").disabled) return;
-  $("#refresh").disabled = true;
+  if (!window.ipc || scanning) return;
+  scanning = true;
+  if (manual === true) $("#refresh").setAttribute("aria-disabled", "true"); // aria-disabled keeps keyboard focus on it
   // a manual Refresh shows that it is working; Live ticks stay quiet so the window does not flicker
   if (manual === true) { manualScan = true; $("#scaninfo").textContent = "Scanning…"; $("#scaninfo").setAttribute("aria-busy", "true"); }
   window.ipc.postMessage("scan");
 }
 $("#refresh").addEventListener("click", () => requestScan(true));
+// the button is off only while the first scan runs; after that a scan in flight just ignores clicks
 let liveTimer = null;
 $("#live").addEventListener("change", (e) => {
   clearInterval(liveTimer);
@@ -1299,7 +1321,7 @@ $("#theme").addEventListener("click", () => { const t = document.documentElement
 // ---------- updates (the app checks GitHub Releases; the page shows the result)
 // the app calls this when a scan crashed; keep the old numbers and say so
 window.tkScanError = function () {
-  scanFailed = true; $("#refresh").disabled = false; $("#scaninfo").removeAttribute("aria-busy");
+  scanFailed = true; scanDone(); $("#scaninfo").removeAttribute("aria-busy");
   if (D) { showScanInfo(); render(); } else { $("#scaninfo").textContent = "Scan failed"; $("#problems").textContent = "The scan failed. Press Refresh to try again."; }
 };
 window.tkUpdate = function (u) {

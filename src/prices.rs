@@ -108,7 +108,7 @@ pub static PRICES: &[Price] = &[
     o("o4-mini", "o4-mini", 1.10, 0.275, 4.40),
 ];
 
-/// Exact id match after dropping a date suffix (`-20251001`) or a `[1m]` tag.
+/// Id match, ignoring case, after dropping a date suffix (`-20251001`) or a `[1m]` tag.
 pub fn lookup(model: &str) -> Option<&'static Price> {
     let mut m = model.trim();
     if let Some(i) = m.find('[') {
@@ -120,7 +120,7 @@ pub fn lookup(model: &str) -> Option<&'static Price> {
             m = &m[..i];
         }
     }
-    PRICES.iter().find(|p| p.id == m)
+    PRICES.iter().find(|p| p.id.eq_ignore_ascii_case(m))
 }
 
 pub struct Use {

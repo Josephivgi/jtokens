@@ -3,6 +3,9 @@
 mod prices;
 mod update;
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
@@ -59,8 +62,19 @@ fn json_str_at(buf: &[u8], start: usize) -> String {
                 match buf[i] {
                     b'n' | b't' | b'r' => out.push(b' '),
                     b'u' => {
-                        // keep it simple: skip \uXXXX
-                        i += 4;
+                        // \uXXXX becomes its UTF-8 bytes; a surrogate pair 😀 becomes one character
+                        let hex = |at: usize| buf.get(at..at + 4).and_then(|h| std::str::from_utf8(h).ok()).and_then(|h| u32::from_str_radix(h, 16).ok());
+                        if let Some(mut cp) = hex(i + 1) {
+                            i += 4;
+                            if (0xD800..0xDC00).contains(&cp) && buf.get(i + 1) == Some(&b'\\') && buf.get(i + 2) == Some(&b'u') {
+                                if let Some(lo) = hex(i + 3).filter(|lo| (0xDC00..0xE000).contains(lo)) {
+                                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                                    i += 6;
+                                }
+                            }
+                            let mut tmp = [0u8; 4];
+                            out.extend_from_slice(char::from_u32(cp).unwrap_or('\u{FFFD}').encode_utf8(&mut tmp).as_bytes());
+                        }
                     }
                     c => out.push(c),
                 }
@@ -80,11 +94,18 @@ fn str_after(buf: &[u8], key: &[u8], limit: usize) -> Option<String> {
 // ---------------------------------------------------------------------------
 // Parsed files
 
+/// One value per harness. The number is the index into `HARNESS_NAMES`, which
+/// the page gets as `harnesses`; add a harness by adding a name and a reader.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Src {
     Claude = 0,
     Codex = 1,
+    OpenCode = 2,
+    Pi = 3,
+    Droid = 4,
 }
+
+const HARNESS_NAMES: [&str; 5] = ["Claude Code", "Codex", "OpenCode", "Pi", "Droid"];
 
 struct Event {
     ts: u32,
@@ -134,7 +155,265 @@ fn intern(models: &mut Vec<String>, s: &[u8]) -> u16 {
     (models.len() - 1) as u16
 }
 
+/// Stable id for one usage record, so a copied record (a forked session) counts once.
+fn key(parts: &[&[u8]]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for p in parts {
+        for &b in p.iter() {
+            h = (h ^ b as u64).wrapping_mul(0x0100_0000_01b3);
+        }
+        h = (h ^ 0xff).wrapping_mul(0x0100_0000_01b3);
+    }
+    h | 1
+}
+
+// Pi: one JSON object per line. Assistant messages carry `usage` and a
+// millisecond `timestamp`; the header line carries the project `cwd`.
+#[derive(serde::Deserialize)]
+struct PiLine {
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    id: Option<String>,
+    cwd: Option<String>,
+    name: Option<String>,
+    message: Option<PiMsg>,
+}
+
+#[derive(serde::Deserialize)]
+struct PiMsg {
+    // any JSON type here: a line with an odd model or timestamp must not be dropped whole
+    model: Option<serde_json::Value>,
+    timestamp: Option<serde_json::Value>,
+    usage: Option<PiUsage>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct PiUsage {
+    // read as numbers of any kind; a fraction or a negative count is cut to a whole, non-negative count below
+    input: Option<f64>,
+    output: Option<f64>,
+    #[serde(rename = "cacheRead")]
+    cache_read: Option<f64>,
+    #[serde(rename = "cacheWrite")]
+    cache_write: Option<f64>,
+}
+
+fn parse_pi(path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u8>) -> Option<FileData> {
+    buf.clear();
+    fs::File::open(path).ok()?.read_to_end(buf).ok()?;
+    let mut fd = FileData { src: Src::Pi, size, mtime, session, cwd: String::new(), title: String::new(), models: Vec::new(), events: Vec::new() };
+    for line in buf.split(|&c| c == b'\n') {
+        // skip the big lines that cannot hold usage or the header/title before parsing them
+        let usage = find(line, b"\"usage\"").is_some();
+        if !usage && find(line, b"\"type\":\"session").is_none() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_slice::<PiLine>(line) else { continue };
+        match v.kind.as_deref() {
+            Some("session") => fd.cwd = v.cwd.unwrap_or_default(),
+            Some("session_info") => {
+                if let Some(n) = v.name.filter(|n| !n.is_empty()) {
+                    fd.title = n; // the last name wins, like Claude's ai-title
+                }
+            }
+            Some("message") => {
+                let Some(m) = v.message else { continue };
+                let Some(u) = m.usage else { continue };
+                // infinite counts are dropped; negative counts and NaN become 0; huge ones are capped
+                let whole = |x: Option<f64>| x.filter(|f| f.is_finite()).map_or(0, |f| f.clamp(0.0, 1e12) as u64);
+                let (input, output) = (whole(u.input), whole(u.output));
+                let (cache_read, cache_write) = (whole(u.cache_read), whole(u.cache_write));
+                if input + output + cache_read + cache_write == 0 {
+                    continue;
+                }
+                let ts = m.timestamp.as_ref().and_then(|v| v.as_f64()).map(|ms| (ms / 1000.0) as u32).unwrap_or((mtime / 1_000_000_000) as u32);
+                let model = m.model.as_ref().and_then(|v| v.as_str()).filter(|s| !s.is_empty()).unwrap_or("unknown");
+                let id = match v.id.as_deref().filter(|s| !s.is_empty()) {
+                    Some(id) => key(&[id.as_bytes(), &ts.to_le_bytes()]),
+                    None => 0,
+                };
+                let model = intern(&mut fd.models, model.as_bytes());
+                // pi's output already includes reasoning; cache writes use the 5 minute rate
+                fd.events.push(Event { ts, model, input, output, cache_read, cache_w5m: cache_write, cache_w1h: 0, id, fast: false });
+            }
+            _ => {}
+        }
+    }
+    Some(fd)
+}
+
+// Droid keeps no per-message usage on disk. Each session's settings file holds
+// its running totals, so one event per session is made, at the time the file
+// was last saved.
+#[derive(serde::Deserialize)]
+struct DroidSettings {
+    // any JSON type here: a non-text model must not make the whole file unreadable
+    model: Option<serde_json::Value>,
+    #[serde(rename = "tokenUsage")]
+    usage: Option<DroidUsage>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct DroidUsage {
+    // counts of any number type (or null); cut to whole, non-negative counts in parse_droid
+    #[serde(rename = "inputTokens", default)]
+    input: Option<f64>,
+    #[serde(rename = "outputTokens", default)]
+    output: Option<f64>,
+    #[serde(rename = "cacheReadTokens", default)]
+    cache_read: Option<f64>,
+    #[serde(rename = "cacheCreationTokens", default)]
+    cache_write: Option<f64>,
+}
+
+fn parse_droid(path: &Path, session: String, size: u64, mtime: u64) -> Option<FileData> {
+    let s: DroidSettings = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    let mut fd = FileData { src: Src::Droid, size, mtime, session, cwd: String::new(), title: String::new(), models: Vec::new(), events: Vec::new() };
+    // the settings file has no folder; the session's own log starts with it
+    if let Ok(mut f) = fs::File::open(path.with_file_name(format!("{}.jsonl", fd.session))) {
+        let mut head = vec![0u8; 1 << 16];
+        let n = f.read(&mut head).unwrap_or(0);
+        fd.cwd = str_after(&head[..n], b"\"cwd\":\"", n).unwrap_or_default();
+    }
+    // infinite counts are dropped; negative counts and NaN become 0; huge ones are capped
+    let whole = |x: Option<f64>| x.filter(|f| f.is_finite()).map_or(0, |f| f.clamp(0.0, 1e12) as u64);
+    let u = s.usage.unwrap_or_default();
+    let (input, output, cache_read, cache_write) = (whole(u.input), whole(u.output), whole(u.cache_read), whole(u.cache_write));
+    if input + output + cache_read + cache_write == 0 {
+        return Some(fd);
+    }
+    let model = s.model.as_ref().and_then(|v| v.as_str()).filter(|m| !m.is_empty()).unwrap_or("unknown");
+    let model = intern(&mut fd.models, model.as_bytes());
+    let id = key(&[fd.session.as_bytes(), b"droid"]);
+    fd.events.push(Event {
+        ts: (mtime / 1_000_000_000) as u32,
+        model,
+        input,
+        output,
+        cache_read,
+        cache_w5m: cache_write,
+        cache_w1h: 0,
+        id,
+        fast: false,
+    });
+    Some(fd)
+}
+
+// A stored value as text, whatever its type; None for NULL or binary data.
+fn stored_text(v: rusqlite::types::Value) -> Option<String> {
+    use rusqlite::types::Value;
+    match v {
+        Value::Text(s) => Some(s),
+        Value::Integer(i) => Some(i.to_string()),
+        Value::Real(f) => Some(f.to_string()),
+        _ => None,
+    }
+}
+
+// A stored value as a whole time; None when it is not a time.
+fn stored_time(v: rusqlite::types::Value) -> Option<i64> {
+    use rusqlite::types::Value;
+    match v {
+        Value::Integer(i) => Some(i),
+        Value::Real(f) if f.is_finite() => Some(f as i64),
+        Value::Text(s) => s.trim().parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+// OpenCode keeps everything in one SQLite database. Read it whole (it is small
+// next to the logs) and group the assistant messages by session.
+// None when the database cannot be read right now (locked, busy, schema changed): the
+// caller keeps its last numbers and tries again on the next scan.
+fn scan_opencode(db: &Path) -> Option<Vec<Arc<FileData>>> {
+    use rusqlite::types::Value;
+    use rusqlite::{Connection, OpenFlags};
+    let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX).ok()?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(2));
+    let mut stmt = conn
+        .prepare(
+            "SELECT m.id, m.session_id, m.time_created, m.data, s.directory, s.title \
+             FROM message m JOIN session s ON s.id = m.session_id \
+             WHERE m.data LIKE '%\"tokens\"%' ORDER BY m.time_created",
+        )
+        .ok()?;
+    let rows = stmt
+        .query_map([], |r| {
+            // every column is read as it is stored, so a value of an odd type is skipped below, not fatal
+            Ok((r.get::<_, Value>(0)?, r.get::<_, Value>(1)?, r.get::<_, Value>(2)?, r.get::<_, Value>(3)?, r.get::<_, Value>(4)?, r.get::<_, Value>(5)?))
+        })
+        .ok()?;
+    // only a failed read (locked, busy, damaged) is fatal: the caller keeps the last numbers and retries
+    let rows: Vec<_> = rows.collect::<Result<Vec<_>, _>>().ok()?;
+    let mut by: HashMap<String, FileData> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for (mid, sid, created, data, dir, title) in rows {
+        let (Some(mid), Some(sid), Some(data), Some(created)) = (stored_text(mid), stored_text(sid), stored_text(data), stored_time(created)) else { continue };
+        let (dir, title) = (stored_text(dir), stored_text(title));
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) else { continue };
+        if v.get("role").and_then(|x| x.as_str()) != Some("assistant") {
+            continue;
+        }
+        // a fraction or a negative count is cut to a whole, non-negative count instead of becoming 0
+        // counts may be numbers or numeric text; infinite values are dropped and huge ones capped
+        let num = |p: &str| {
+            v.pointer(p)
+                .and_then(|x| {
+                    x.as_u64().map(|u| u.min(1_000_000_000_000)).or_else(|| {
+                        x.as_f64()
+                            .or_else(|| x.as_str().and_then(|s| s.trim().parse::<f64>().ok()))
+                            .filter(|f| f.is_finite())
+                            .map(|f| f.clamp(0.0, 1e12) as u64)
+                    })
+                })
+                .unwrap_or(0)
+        };
+        let (input, output, reasoning) = (num("/tokens/input"), num("/tokens/output"), num("/tokens/reasoning"));
+        let (cache_read, cache_write) = (num("/tokens/cache/read"), num("/tokens/cache/write"));
+        if input + output + reasoning + cache_read + cache_write == 0 {
+            continue;
+        }
+        let model = v.get("modelID").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).unwrap_or("unknown");
+        if !by.contains_key(&sid) {
+            order.push(sid.clone());
+            by.insert(
+                sid.clone(),
+                FileData {
+                    src: Src::OpenCode,
+                    size: 0,
+                    mtime: 0,
+                    session: sid.clone(),
+                    cwd: dir.unwrap_or_default().replace('/', "\\"),
+                    title: title.unwrap_or_default(),
+                    models: Vec::new(),
+                    events: Vec::new(),
+                },
+            );
+        }
+        let fd = by.get_mut(&sid).expect("inserted above");
+        let model = intern(&mut fd.models, model.as_bytes());
+        // OpenCode lists reasoning apart from output; both are billed as output
+        fd.events.push(Event {
+            ts: (created / 1000) as u32,
+            model,
+            input,
+            output: output + reasoning,
+            cache_read,
+            cache_w5m: cache_write,
+            cache_w1h: 0,
+            id: key(&[mid.as_bytes()]),
+            fast: false,
+        });
+    }
+    Some(order.into_iter().filter_map(|s| by.remove(&s)).map(Arc::new).collect())
+}
+
 fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u8>, recs: &mut Vec<Rec>) -> Option<FileData> {
+    match src {
+        Src::Pi => return parse_pi(path, session, size, mtime, buf),
+        Src::Droid => return parse_droid(path, session, size, mtime),
+        _ => {}
+    }
     read_padded(path, buf).ok()?;
     let len = buf.len() - PAD;
     let data = &buf[..len];
@@ -244,14 +523,19 @@ struct Job {
 
 /// Collects (path, size, mtime). On Windows DirEntry metadata comes from the
 /// directory listing itself, so no extra file open per entry.
-fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64, u64)>) {
+fn is_log(p: &Path, suffix: &str) -> bool {
+    // Windows file names are not case-sensitive: *.JSONL is a log too
+    p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(&suffix.to_ascii_lowercase()))
+}
+
+fn walk(dir: &Path, suffix: &str, out: &mut Vec<(PathBuf, u64, u64)>) {
     let Ok(rd) = fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let Ok(md) = e.metadata() else { continue };
         let p = e.path();
         if md.is_dir() {
-            walk(&p, out);
-        } else if p.extension().is_some_and(|x| x == "jsonl") {
+            walk(&p, suffix, out);
+        } else if is_log(&p, suffix) {
             let mtime = md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0);
             out.push((p, md.len(), mtime));
         }
@@ -260,7 +544,7 @@ fn walk(dir: &Path, out: &mut Vec<(PathBuf, u64, u64)>) {
 
 /// Walks each second-level directory on its own thread (Codex keeps one
 /// folder per day, Claude one per project).
-fn walk_parallel(root: &Path) -> Vec<(PathBuf, u64, u64)> {
+fn walk_parallel(root: &Path, suffix: &str) -> Vec<(PathBuf, u64, u64)> {
     let mut out = Vec::new();
     let mut dirs = Vec::new();
     let Ok(rd) = fs::read_dir(root) else { return out };
@@ -275,7 +559,7 @@ fn walk_parallel(root: &Path) -> Vec<(PathBuf, u64, u64)> {
                         let p2 = e2.path();
                         if md2.is_dir() {
                             dirs.push(p2);
-                        } else if p2.extension().is_some_and(|x| x == "jsonl") {
+                        } else if is_log(&p2, suffix) {
                             let mt = md2.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0);
                             out.push((p2, md2.len(), mt));
                         }
@@ -283,7 +567,7 @@ fn walk_parallel(root: &Path) -> Vec<(PathBuf, u64, u64)> {
                 }
                 Err(_) => continue,
             }
-        } else if p.extension().is_some_and(|x| x == "jsonl") {
+        } else if is_log(&p, suffix) {
             let mt = md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0);
             out.push((p, md.len(), mt));
         }
@@ -301,7 +585,7 @@ fn walk_parallel(root: &Path) -> Vec<(PathBuf, u64, u64)> {
                     if k >= dirs.len() {
                         break;
                     }
-                    walk(&dirs[k], &mut local);
+                    walk(&dirs[k], suffix, &mut local);
                 }
                 found.lock().unwrap().extend(local);
             });
@@ -335,6 +619,20 @@ fn codex_session(path: &Path) -> String {
     }
 }
 
+fn droid_session(path: &Path) -> String {
+    // <session id>.settings.json
+    let name = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    name.strip_suffix(".settings.json").map(str::to_string).unwrap_or(name)
+}
+
+/// (length, last-modified nanos) of a file, or zeros when it is missing.
+fn file_sig(p: &Path) -> (u64, u64) {
+    match fs::metadata(p) {
+        Ok(md) => (md.len(), md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0)),
+        Err(_) => (0, 0),
+    }
+}
+
 #[derive(Default)]
 struct ScanStats {
     files: usize,
@@ -347,6 +645,9 @@ struct ScanStats {
 #[derive(Default)]
 struct Scanner {
     cache: HashMap<PathBuf, Arc<FileData>>,
+    /// OpenCode's database signature and the sessions read from it last time
+    oc_sig: Option<(u64, u64, u64, u64)>,
+    oc_files: Vec<Arc<FileData>>,
 }
 
 impl Scanner {
@@ -355,20 +656,42 @@ impl Scanner {
         let h = home();
         let claude_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| h.join(".claude"));
         let codex_dir = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| h.join(".codex"));
+        let pi_dir = h.join(".pi").join("agent").join("sessions");
+        let droid_dir = h.join(".factory").join("sessions");
+        let oc_db = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| h.join(".local").join("share")).join("opencode").join("opencode.db");
         let mut jobs = Vec::new();
-        for (src, dir) in [
-            (Src::Claude, claude_dir.join("projects")),
-            (Src::Codex, codex_dir.join("sessions")),
-            (Src::Codex, codex_dir.join("archived_sessions")),
+        for (src, dir, suffix) in [
+            (Src::Claude, claude_dir.join("projects"), ".jsonl"),
+            (Src::Codex, codex_dir.join("sessions"), ".jsonl"),
+            (Src::Codex, codex_dir.join("archived_sessions"), ".jsonl"),
+            (Src::Pi, pi_dir, ".jsonl"),
+            (Src::Droid, droid_dir, ".settings.json"),
         ] {
-            let paths = walk_parallel(&dir);
+            let paths = walk_parallel(&dir, suffix);
             for (p, size, mtime) in paths {
-                let session = if src == Src::Claude { claude_session(&p) } else { codex_session(&p) };
+                let session = match src {
+                    Src::Claude => claude_session(&p),
+                    Src::Droid => droid_session(&p),
+                    _ => codex_session(&p), // Codex and Pi: the 36 character session id ends the file name
+                };
                 jobs.push(Job { src, path: p, session, size, mtime });
             }
         }
 
-        let mut stats = ScanStats { files: jobs.len(), ..Default::default() };
+        // OpenCode: one database. Re-read it only when the database or its write-ahead log changed.
+        let (db_len, db_mt) = file_sig(&oc_db);
+        let (wal_len, wal_mt) = file_sig(&oc_db.with_extension("db-wal"));
+        let sig = (db_len, db_mt, wal_len, wal_mt);
+        if self.oc_sig != Some(sig) {
+            // a database that cannot be read now keeps the last numbers, and is tried again on the next scan
+            if let Some(files) = if db_len == 0 { Some(Vec::new()) } else { scan_opencode(&oc_db) } {
+                self.oc_files = files;
+                self.oc_sig = Some(sig);
+            }
+        }
+
+        // the OpenCode database counts as one file, however many sessions it holds
+        let mut stats = ScanStats { files: jobs.len() + usize::from(db_len > 0), ..Default::default() };
         let mut result: Vec<Option<Arc<FileData>>> = vec![None; jobs.len()];
         let mut todo = Vec::new();
         for (i, j) in jobs.iter().enumerate() {
@@ -415,7 +738,9 @@ impl Scanner {
         let live: HashSet<&PathBuf> = jobs.iter().map(|j| &j.path).collect();
         self.cache.retain(|k, _| live.contains(k));
         stats.ms = t0.elapsed().as_secs_f64() * 1000.0;
-        (result.into_iter().flatten().collect(), stats)
+        let mut files: Vec<Arc<FileData>> = result.into_iter().flatten().collect();
+        files.extend(self.oc_files.iter().cloned());
+        (files, stats)
     }
 }
 
@@ -460,7 +785,11 @@ fn codex_titles() -> HashMap<String, String> {
         b.extend_from_slice(&[0u8; PAD]);
         for line in b.split(|&c| c == b'\n') {
             let (Some(i), Some(t)) = (find(line, b"\"id\":\""), find(line, b"\"thread_name\":\"")) else { continue };
-            m.insert(json_str_at(line, i + 6), json_str_at(line, t + 15));
+            // an empty name never replaces a real one
+            let title = json_str_at(line, t + 15);
+            if !title.is_empty() {
+                m.insert(json_str_at(line, i + 6), title);
+            }
         }
     }
     m
@@ -483,6 +812,17 @@ struct Totals {
     tokens: u64,
 }
 
+/// Writes a file for a command-line flag. A failure is printed and returns false, so the run exits with an error.
+fn save_or_report(what: &str, path: &str, body: &str) -> bool {
+    match fs::write(path, body) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("JTokens could not write the {what} to {path}: {e}");
+            false
+        }
+    }
+}
+
 fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
     let titles = codex_titles();
     let mut models: Vec<(Src, String)> = Vec::new();
@@ -500,7 +840,8 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
     let mut sessions: Vec<Sess> = Vec::new();
     let mut sess_idx: HashMap<(Src, String), usize> = HashMap::new();
     let mut rows: HashMap<(usize, usize, u32), Agg> = HashMap::new(); // (model, session, hour)
-    let mut seen: HashSet<u64> = HashSet::new();
+    // Keyed by harness too, so an id from one tool can never drop an event from another.
+    let mut seen: HashSet<(u8, u64)> = HashSet::new();
     let mut events = 0usize;
     let (mut tcost, mut ttok) = (0.0f64, 0u64);
 
@@ -544,7 +885,7 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
             })
             .collect();
         for e in &fd.events {
-            if e.id != 0 && !seen.insert(e.id) {
+            if e.id != 0 && !seen.insert((fd.src as u8, e.id)) {
                 continue;
             }
             events += 1;
@@ -592,16 +933,33 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
         }
         esc(s, &mut j);
     }
+    j.push_str("],\"harnesses\":[");
+    for (i, n) in HARNESS_NAMES.iter().enumerate() {
+        if i > 0 {
+            j.push(',');
+        }
+        esc(n, &mut j);
+    }
     j.push_str("],\"models\":[");
+    // The same model under two harnesses gets the harness name on its label, so the
+    // legend and the By model list can tell the two apart.
+    let base_name = |m: &str| -> String { prices::lookup(m).map(|p| p.name.to_string()).unwrap_or_else(|| m.to_string()) };
+    // a suffix only when two harnesses share the name; two ids inside one harness do not need it
+    let mut name_uses: HashMap<String, HashSet<u8>> = HashMap::new();
+    for (src, m) in models.iter() {
+        name_uses.entry(base_name(m.as_str())).or_default().insert(*src as u8);
+    }
     for (i, (src, m)) in models.iter().enumerate() {
         if i > 0 {
             j.push(',');
         }
         let p = prices::lookup(m);
+        let base = base_name(m.as_str());
+        let shown = if name_uses.get(&base).map_or(false, |s| s.len() > 1) { format!("{base} · {}", HARNESS_NAMES[*src as usize]) } else { base };
         let _ = write!(j, "{{\"src\":{},\"id\":", *src as u8);
         esc(m, &mut j);
         j.push_str(",\"name\":");
-        esc(p.map(|p| p.name).unwrap_or(m), &mut j);
+        esc(&shown, &mut j);
         let _ = write!(j, ",\"priced\":{}}}", p.is_some());
     }
     j.push_str("],\"projects\":[");
@@ -643,7 +1001,8 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
     j.push_str("],\"rows\":[");
     let mut first = true;
     let mut sorted: Vec<_> = rows.into_iter().collect();
-    sorted.sort_unstable_by_key(|(k, _)| k.2);
+    // hour first, then model and session, so the same data always gives the same text
+    sorted.sort_unstable_by_key(|(k, _)| (k.2, k.0, k.1));
     for ((m, s, hr), a) in sorted {
         if !first {
             j.push(',');
@@ -692,7 +1051,7 @@ fn serve() {
     }
 }
 
-const HELP: &str = "JTokens: Claude Code and Codex token usage and API cost
+const HELP: &str = "JTokens: token usage and API cost for Claude Code, Codex, OpenCode, Pi and Droid
 
   jtokens                                open the app
   jtokens --smoke --report r.json        scan twice with no window, write timings and totals
@@ -726,7 +1085,8 @@ fn error_box(msg: &str) {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let flag = |f: &str| args.iter().any(|a| a == f);
-    let value = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).cloned();
+    // a flag's value is the next argument, unless that argument is another flag
+    let value = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).filter(|a| !a.starts_with("--")).cloned();
     let quiet = flag("--serve") || flag("--smoke") || flag("--smoke-gui") || value("--export").is_some() || value("--json").is_some();
     if !quiet {
         std::panic::set_hook(Box::new(|info| if IN_SCAN.with(|c| c.get()) {
@@ -768,6 +1128,14 @@ fn main() {
         return;
     }
 
+    // a file flag with no path is an error, not a silent run of the window
+    for f in ["--export", "--json"] {
+        if flag(f) && value(f).is_none() {
+            attach_console();
+            eprintln!("JTokens: {f} needs a file path");
+            std::process::exit(2);
+        }
+    }
     if flag("--smoke") || value("--export").is_some() || value("--json").is_some() {
         attach_console();
         let mut sc = Scanner::default();
@@ -775,8 +1143,10 @@ fn main() {
         let t = build_json(&files, &st);
         let (files2, st2) = sc.scan();
         let tj0 = Instant::now();
-        let t2 = build_json(&files2, &st2);
+        let _warm = build_json(&files2, &st2);
         let tj = tj0.elapsed().as_secs_f64() * 1000.0;
+        // the two scans must give the same data; the timings in the scan stats are left out of the comparison
+        let warm_same = build_json(&files, &ScanStats::default()).json == build_json(&files2, &ScanStats::default()).json;
         let report = format!(
             "{{\"coldScanMs\":{:.1},\"warmScanMs\":{:.1},\"warmParsed\":{},\"jsonMs\":{:.1},\"files\":{},\"gb\":{:.2},\"events\":{},\"tokens\":{},\"costUsd\":{:.2},\"avx2\":{},\"warmSame\":{}}}",
             st.ms,
@@ -789,19 +1159,23 @@ fn main() {
             t.tokens,
             t.cost,
             unsafe { tk_has_avx2() } != 0,
-            t.json.len() == t2.json.len()
+            warm_same
         );
+        let mut saved = true;
         if let Some(p) = value("--json") {
-            let _ = fs::write(&p, &t.json);
+            saved &= save_or_report("JSON data", &p, &t.json);
         }
         if let Some(p) = value("--export") {
             let html = UI.replace("<!--DATA-->", &format!("<script>window.__TK_STATIC={};</script>", t.json));
-            let _ = fs::write(&p, html);
+            saved &= save_or_report("dashboard", &p, &html);
         }
         if let Some(p) = value("--report") {
-            let _ = fs::write(&p, &report);
+            saved &= save_or_report("report", &p, &report);
         }
         println!("{report}");
+        if !saved {
+            std::process::exit(1);
+        }
         return;
     }
     run_gui(flag("--smoke-gui"), value("--report"));

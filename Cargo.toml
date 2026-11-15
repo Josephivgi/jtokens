@@ -1,8 +1,8 @@
 [package]
 name = "jtokens"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
-description = "Fast Claude Code and Codex token and API cost viewer"
+description = "Fast token and API cost viewer for Claude Code, Codex, OpenCode, Pi and Droid"
 license = "MIT"
 repository = "https://github.com/Josephivgi/jtokens"
 
@@ -12,6 +12,8 @@ tao = "0.37"
 ureq = { version = "3", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+serde_json = "1"
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 [build-dependencies]
 cc = "1"

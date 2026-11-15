@@ -98,6 +98,22 @@ jobs:
           "scanner: $(Get-Content smoke.json -Raw)"
           "window: $(Get-Content gui.json -Raw)"
 
+      # Unit tests for every reader, the price math and the dedupe (src/tests.rs).
+      - name: Unit tests
+        run: cargo test --release --locked
+
+      # The end-to-end test reads node:sqlite, which needs a recent Node, so pin Node instead of using the runner's default.
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      # The real exe reads a fake home folder with one set of logs per harness,
+      # exports the dashboard, and headless Edge checks each number and layout.
+      - name: End-to-end test (fake logs, real exe, headless Edge)
+        shell: pwsh
+        run: node tests/e2e/run.mjs
+
       - name: Pack
         shell: pwsh
         run: |

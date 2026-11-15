@@ -140,12 +140,17 @@ th { color: var(--text-secondary); font-weight: 600; font-size: 12px; user-selec
 td.num, th.num { text-align: right; }
 html, .update pre { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 td.cut { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+td.cut.mdl { max-width: 210px; } /* model names carry their harness suffix, so they need room */
+@media (max-width: 1300px) { td.cut.mdl { max-width: 150px; } } /* at 1200px the session name column needs the room */
+.card.max td.cut.mdl { max-width: 260px; } /* full screen has the width for the harness suffix */
 th[data-sort] { cursor: pointer; }
 td.wrap { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
 tbody tr { cursor: pointer; }
 tbody tr:hover td { background-color: var(--surface-2); }
 #priceTable tbody tr:hover td { background-color: transparent; }
-tbody tr[aria-selected="true"] td { background-color: var(--surface-2); }
+#priceTable th, #priceTable td { padding: 4px 6px; font-size: 12px; } /* the ten price columns fit a 1200px window */
+tbody tr[aria-selected="true"] td { background-color: color-mix(in srgb, var(--accent) 14%, var(--surface-1)); }
+tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); } /* a bar too, so the state is not only a tint */
 td.db { background-image: linear-gradient(to right, color-mix(in srgb, var(--accent) 22%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 8px) 4px; background-position: 4px calc(100% - 3px); }
 .drag-band { fill: var(--accent); opacity: .16; }
 .muted { color: var(--text-muted); }
@@ -197,7 +202,7 @@ svg text.vl { fill: var(--text-secondary); font-size: 11px; }
 @container (max-width: 150px) { .kpi .spark { display: none; } }
 @container (max-width: 205px) { .kpi .v.long ~ .spark { transform: scaleX(.6); transform-origin: right center; } }
 /* API prices: the overview filters do nothing there */
-body.on-prices #srcSeg, body.on-prices #rangeSeg, body.on-prices #metricSeg { visibility: hidden; }
+body.on-prices #srcSeg, body.on-prices #rangeSeg, body.on-prices #metricSeg { display: none; }
 /* a full screen card owns the scroll; the page behind it stays put */
 html:has(body.has-max) { overflow: hidden; }
 .card.max .body { overscroll-behavior: contain; }
@@ -217,6 +222,22 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
   .kpi:nth-child(4) { border-left: 0; }
   .kpi:nth-child(n+4) { border-top: 1px solid var(--grid); }
   .prices { min-height: 70vh; }
+  /* full screen on a small window: the extra Sessions columns would push the numbers off the card */
+  .card.max .xcol { display: none; }
+}
+/* phone-width windows: one column of cards, two KPIs per row */
+@media (max-width: 640px) {
+  .board { grid-template-columns: minmax(0, 1fr); }
+  #c-sessions { grid-row: auto; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi + .kpi { border-left: 0; }
+  .kpi:nth-child(even) { border-left: 1px solid var(--grid); }
+  .kpi:nth-child(n+3) { border-top: 1px solid var(--grid); }
+  /* phone: the Sessions table keeps the session name and the three numbers */
+  .xsm { display: none; }
+  /* full screen on a phone: the extra columns would push the numbers off-screen */
+  .card.max .xcol { display: none; }
+  .problems { -webkit-line-clamp: 6; }
 }
 </style>
 </head>
@@ -230,8 +251,6 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     </div>
     <div class="seg" id="srcSeg" role="group" aria-label="Source">
       <button data-v="all" aria-pressed="true">All</button>
-      <button data-v="0" aria-pressed="false">Claude Code</button>
-      <button data-v="1" aria-pressed="false">Codex</button>
     </div>
     <div class="seg" id="rangeSeg" role="group" aria-label="Date range">
       <button data-v="1" aria-pressed="false">Today</button>
@@ -303,6 +322,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
           Claude: cache writes are 1.25x input (5 minute) or 2x input (1 hour); Claude Haiku 5.5 uses the higher row when a prompt is over 100,000 tokens; fast mode uses the fast price with the same cache multipliers.
           OpenAI: cached input uses the cached rate; prompts over 272,000 tokens use the long-context row. Codex priority or fast tiers are not detected and are priced at Standard.
           Models with no public price (for example codex-auto-review) are counted in tokens but not in cost.
+          OpenCode and Pi log every request, so their tokens land on the day they were used. Droid logs only a running total for each session, so its tokens are counted at the time that session was last saved.
         </div>
       </div>
     </div>
@@ -320,7 +340,7 @@ window.addEventListener("unhandledrejection", (e) => { if (window.ipc) window.ip
 const $ = (s) => document.querySelector(s);
 const SLOTS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const slotByKey = new Map(); // model -> color slot, kept across scans
-const SRC_NAME = ["Claude Code", "Codex"];
+let SRC_NAME = ["Claude Code", "Codex"]; // replaced by the scanner's harness list
 const projName = (p) => D.projNames ? D.projNames[p] : baseName(D.projects[p]);
 const GRAPH = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
 const chars = (n) => GRAPH ? Array.from(GRAPH.segment(n), (x) => x.segment) : [...n]; // what the eye sees as one character
@@ -381,11 +401,27 @@ function dayOf(hour) {
 }
 
 // ---------- data intake
+// one button per harness the scanner reported, after "All"
+function buildSourceButtons() {
+  SRC_NAME = D.harnesses;
+  const seg = $("#srcSeg");
+  const key = D.harnesses.join("|");
+  if (seg.dataset.built === key) return;
+  seg.dataset.built = key;
+  seg.querySelectorAll("button:not([data-v='all'])").forEach((b) => b.remove());
+  D.harnesses.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.dataset.v = String(i);
+    b.setAttribute("aria-pressed", String(state.src === String(i)));
+    b.textContent = name;
+    seg.appendChild(b);
+  });
+}
 window.tkData = function (data) {
   const wasFailed = scanFailed; scanFailed = false;
   $("#scaninfo").removeAttribute("aria-busy");
   // Live asks every 10 s; when no log file changed, only the scan line needs updating
-  const quiet = D && !manualScan && data.scan && data.scan.parsed === 0 && data.scan.files === D.scan.files && data.rows.length === D.rows.length && JSON.stringify(data.sessions) === JSON.stringify(D.sessions) && rangeStart() === RS && Math.floor(Date.now() / 3600000) === renderedHour;
+  const quiet = D && !manualScan && data.scan && data.scan.parsed === 0 && data.scan.files === D.scan.files && JSON.stringify(data.rows) === JSON.stringify(D.rows) && JSON.stringify(data.sessions) === JSON.stringify(D.sessions) && rangeStart() === RS && Math.floor(Date.now() / 3600000) === renderedHour;
   manualScan = false;
   if (quiet) { D.scan = data.scan; showScanInfo(); scanDone(); if (wasFailed) { const fk = focusKey(document.activeElement); renderKpis(); const el = fk && document.querySelector(fk); if (el && document.activeElement !== el) el.focus({ preventScroll: true }); } return; }
   // filters hold array indices; carry them over by id, since a rescan can reorder
@@ -447,11 +483,11 @@ window.tkData = function (data) {
   // the oldest log kept on disk: before it there is no data, not zero use
   D.firstDay = D.rows.reduce((m, r) => !m || r[9] < m ? r[9] : m, null);
   D.firstHour = D.rows.reduce((m, r) => Math.min(m, r[2]), Infinity);
-  D.firstHourBySrc = [Infinity, Infinity]; D.firstDayBySrc = [null, null];
+  buildSourceButtons();
+  D.firstHourBySrc = D.harnesses.map(() => Infinity); D.firstDayBySrc = D.harnesses.map(() => null);
   for (const r of D.rows) { const sr = D.models[r[0]].src; if (r[2] < D.firstHourBySrc[sr]) D.firstHourBySrc[sr] = r[2]; if (!D.firstDayBySrc[sr] || r[9] < D.firstDayBySrc[sr]) D.firstDayBySrc[sr] = r[9]; }
   showScanInfo();
-  const lastCodex = D.rows.reduce((m, r) => D.models[r[0]].src === 1 ? Math.max(m, r[2]) : m, 0);
-  D.lastBySrc = [D.rows.reduce((m, r) => D.models[r[0]].src === 0 ? Math.max(m, r[2]) : m, 0), lastCodex];
+  D.lastBySrc = D.harnesses.map((_, s) => D.rows.reduce((m, r) => D.models[r[0]].src === s ? Math.max(m, r[2]) : m, 0));
   scanDone();
   try { render(); } finally { $("#refresh").disabled = !!window.__TK_STATIC; }
   if (!rendered) {
@@ -636,7 +672,12 @@ function renderKpis() {
     const hov = `Complete hours only. Now: ${fmt(now)}. ${prevName[0].toUpperCase() + prevName.slice(1)}: ${fmt(before)}.`;
     if (a < 0.05) return `<span class="dl" title="${hov}">no change</span> vs ${prevName}<span class="sr">. ${hov}</span>`;
     const arrow = pct > 0 ? "↑ " : "↓ ";
-    return `<span class="dl" title="${hov}">${arrow}${a >= 10 ? Math.round(a) : a.toFixed(1)}%</span> vs ${prevName}<span class="sr">. ${hov}</span>`;
+    // from ten times up, a percent (1,623%) reads as a glitch, so say how many times instead
+    const times = now / before;
+    const timesR = Math.round(times);
+    // the branch uses the real ratio, so 9.5x stays a percent instead of rounding up to "10×"
+    const shown = times >= 10 ? (timesR > 999 ? ">999×" : `${timesR.toLocaleString("en-US")}×`) : `${a >= 10 ? Math.round(a) : a.toFixed(1)}%`;
+    return `<span class="dl" title="${hov}">${arrow}${shown}</span> vs ${prevName}<span class="sr">. ${hov}</span>`;
   };
   const perDayCaption = () => {
     const plain = fullDays < days.size ? "avg of days with use, not today" : "avg of days with use";
@@ -656,13 +697,13 @@ function renderKpis() {
   $("#kpis").innerHTML = tiles.map(([l, v, s, t, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="${esc(l.startsWith("Cache") ? "cache" : l)}" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v${v.replace(/<[^>]*>/g, "").length > 6 ? " long" : ""}">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div>${t ? spark(t) : ""}</div>`).join("");
   // say why a source is empty instead of showing a blank chart
   const notes = []; let why = "";
-  if (!D.rows.length) notes.push("No Claude Code or Codex logs found on this computer. JTokens reads ~/.claude/projects and ~/.codex/sessions.");
-  else for (const src of state.src === "all" ? [0, 1] : [+state.src]) {
+  if (!D.rows.length) notes.push("No usage logs found on this computer. JTokens reads ~/.claude/projects, ~/.codex/sessions, the OpenCode database, ~/.pi/agent/sessions and ~/.factory/sessions.");
+  else for (const src of state.src === "all" ? D.harnesses.map((_, i) => i) : [+state.src]) {
     const last = D.lastBySrc[src];
     if (!last) { if (state.src !== "all") notes.push(`No ${SRC_NAME[src]} usage found on this computer.`); }
     else if (rs && dayOf(last) < rs) notes.push(`No ${SRC_NAME[src]} usage in this range. Last use: ${dayLabel(dayOf(last))}.`);
   }
-  if ((noHistory || (rs && FD() && rs < FD())) && !state.day) { notes.push(`Logs start ${dayLabel(FD())}: no earlier period to compare.`); why = (state.src === "all" ? FD() !== D.firstDayBySrc[0] : state.src === "1") ? "No earlier Codex logs are on disk." : "Claude Code keeps 30 days of logs unless cleanupPeriodDays is raised."; }
+  if ((noHistory || (rs && FD() && rs < FD())) && !state.day) { notes.push(`Logs start ${dayLabel(FD())}: no earlier period to compare.`); const oldestSrc = state.src === "all" ? D.firstDayBySrc.indexOf(FD()) : +state.src; why = oldestSrc === 0 ? "Claude Code keeps 30 days of logs unless cleanupPeriodDays is raised." : `No earlier ${SRC_NAME[oldestSrc]} logs are on disk.`; }
   if (scanFailed) notes.unshift("The last scan failed. These numbers are from the scan before it.");
   if (unpricedTok) notes.push(`${fmtTok(unpricedTok)} tokens from models with no public price are not in the cost.`);
   const txt = notes.join(" ");
@@ -885,10 +926,10 @@ function renderModels() {
     const c = ownSeries(m) ? colorVar(m) : "var(--other)";
     const right = state.metric === "cost" ? (md.priced ? colUsd(a.cost) : "no public price") : fmtTok(a.tok);
     return `<div class="hbar" data-model="${m}" role="button" aria-pressed="${state.model === m}" tabindex="-1">
-      <div class="n"><i style="background:${c}"></i><span class="nm" title="${esc(md.name)}">${esc(md.name)}</span>${bothTools ? `<span class="muted">${SRC_NAME[md.src]}</span>` : ""}</div>
+      <div class="n"><i style="background:${c}"></i><span class="nm" title="${esc(md.name)}">${esc(md.name)}</span></div>
       <div class="val">${right}</div>
       <div class="track"><b style="width:${(v / max * 100).toFixed(2)}%;background:${c}"></b></div>
-      <div class="meta">${state.metric === "cost" ? fmtTok(a.tok) + " tokens" : md.priced ? colUsd(a.cost) : "no public price"}, ${fmtInt(a.reqs)} requests</div>
+      <div class="meta">${bothTools && !md.name.endsWith(" · " + SRC_NAME[md.src]) ? `${esc(SRC_NAME[md.src])} · ` : ""}${state.metric === "cost" ? fmtTok(a.tok) + " tokens" : md.priced ? colUsd(a.cost) : "no public price"}, ${fmtInt(a.reqs)} request${a.reqs === 1 ? "" : "s"}</div>
     </div>`;
   }).join("");
   rove("#models", ".hbar");
@@ -1113,7 +1154,7 @@ function renderSessions() {
   // keep the selected session visible even when it is outside the top 300, in its sorted place
   if (state.sess !== null && agg.has(state.sess) && !top.some((p) => p[0][0] === state.sess)) { top.push(ranked.find((p) => p[0][0] === state.sess)); top.sort(cmp); }
   const list = top.map((p) => p[0]);
-  if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; $("#sessSub").textContent = state.day || state.model !== null || state.proj !== null || state.src !== "all" ? "No sessions match these filters" : state.range ? "No sessions in this range" : "No sessions yet"; return; }
+  if (!list.length) { $("#sessions").innerHTML = `<div class="empty">No sessions.</div>`; $("#sessSub").textContent = state.day || state.model !== null || state.proj !== null || state.src !== "all" ? "No sessions match these filters" : D.sessions.length && state.range ? "No sessions in this range" : "No sessions yet"; return; }
   // the Tool column only helps when both tools are in the list
   const showTool = state.src === "all" && new Set([...agg.keys()].map((si) => D.sessions[si][0])).size > 1;
   const maxCost = Math.max(...list.map(([, a]) => a.cost), 1e-9), maxTok = Math.max(...list.map(([, a]) => a.tok), 1);
@@ -1121,7 +1162,7 @@ function renderSessions() {
   const arrow = (k) => state.sort === k ? `<span aria-hidden="true">${state.sortDir < 0 ? " ↓" : " ↑"}</span>` : "";
   const sortAttr = (k) => ` data-sort="${k}" tabindex="-1" aria-sort="${state.sort === k ? (state.sortDir < 0 ? "descending" : "ascending") : "none"}"`;
   $("#sessions").innerHTML = `<table role="grid" aria-label="Sessions" aria-description="Up arrow from the first row reaches the column headers, to sort."><thead><tr>
-      <th${sortAttr("title")}>Session${arrow("title")}</th>${showTool ? '<th class="xcol">Tool</th>' : ""}<th class="xcol">Project</th><th>Main model</th><th${sortAttr("start")}>Started${arrow("start")}</th><th class="xcol"${sortAttr("last")}>Last active${arrow("last")}</th>
+      <th${sortAttr("title")}>Session${arrow("title")}</th>${showTool ? '<th class="xcol">Tool</th>' : ""}<th class="xcol">Project</th><th class="xsm">Main model</th><th class="xsm"${sortAttr("start")}>Started${arrow("start")}</th><th class="xcol"${sortAttr("last")}>Last active${arrow("last")}</th>
       <th class="num"${sortAttr("reqs")}>Requests${arrow("reqs")}</th><th class="num"${sortAttr("tokens")}>Tokens${arrow("tokens")}</th><th class="num"${sortAttr("cost")}>API cost${arrow("cost")}</th></tr></thead><tbody>
     ${list.map(([si, a]) => {
       const s = D.sessions[si];
@@ -1129,7 +1170,7 @@ function renderSessions() {
       const unpriced = a.cost === 0 && [...a.models.keys()].every((m) => !D.models[m].priced);
       const title = sessTitle(si);
       return `<tr data-sess="${si}" tabindex="-1" aria-selected="${state.sess === si}" aria-description="${esc((showTool ? SRC_NAME[s[0]] + ", " : "") + D.projects[s[2]])}" title="${esc((showTool ? SRC_NAME[s[0]] + "\n" : "") + D.projects[s[2]])}\n${esc(s[1])}">
-        <td class="wrap" title="${esc(title + "\n" + D.projects[s[2]] + "\n" + s[1])}">${esc(title)}</td>${showTool ? `<td class="xcol muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted cut" title="${esc(projName(s[2]))}">${esc(projName(s[2]))}</td><td class="cut" title="${esc(D.models[main].name)}">${esc(D.models[main].name)}</td><td class="muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
+        <td class="wrap" title="${esc(title + "\n" + D.projects[s[2]] + "\n" + s[1])}">${esc(title)}</td>${showTool ? `<td class="xcol muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted cut" title="${esc(projName(s[2]))}">${esc(projName(s[2]))}</td><td class="xsm cut mdl" title="${esc(D.models[main].name)}">${esc(D.models[main].name)}</td><td class="xsm muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
         <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${unpriced ? `<span class="muted" title="No public price for these models">n/a</span>` : usd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > state.sessCap ? `<div class="note">Showing ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessMore">Show ${fmtInt(Math.min(300, agg.size - state.sessCap))} more</button>${state.sessCap > 300 ? ` <button class="btn" type="button" data-showall="sessTop">Show top 300</button>` : ""}</div>` : state.sessCap > 300 ? `<div class="note">Showing all ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessTop">Show top 300</button></div>` : ""}`;
@@ -1234,17 +1275,17 @@ function renderPrices() {
   const pk = JSON.stringify([D.pricesChecked, D.priceSources, D.prices, D.models.map((m) => [m.id, m.priced])]);
   if (pk === pricesKey && $("#priceTable").innerHTML) return; pricesKey = pk;
   $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`).join(" and ") + "."; $("#priceSub").title = $("#priceSub").textContent;
-  const usedIds = new Set(D.models.map((m) => m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, "")));
+  const usedIds = new Set(D.models.map((m) => m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, "").toLowerCase()));
   // each column uses the decimals its finest price needs, so the points line up
   const decOf = (v) => { if (!v) return 0; let d = 0; while (d < 4 && Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) > 1e-9) d++; return d; };
   const colDec = {}; for (const k of ["in", "w5", "w1h", "cr", "out"]) colDec[k] = Math.max(2, ...D.prices.map((p) => decOf(p[k])));
   const money = (v, k) => v ? "$" + v.toFixed(k ? colDec[k] : Math.max(2, decOf(v))) : k ? `<span class="muted">n/a</span>` : "";
-  $("#priceTable").innerHTML = `<table aria-labelledby="priceTitle"><thead><tr><th>Model</th><th>ID</th><th class="num">Input</th><th class="num">Cache write 5m</th><th class="num">Cache write 1h</th><th class="num">Cache read</th><th class="num">Output</th><th>Long prompt</th><th>Fast mode</th><th>In your logs</th></tr></thead><tbody>
-    ${D.prices.map((p) => `<tr style="cursor:default"><td>${esc(p.name)}</td><td class="muted" style="font-family:var(--mono)">${esc(p.id)}</td>
+  $("#priceTable").innerHTML = `<table aria-labelledby="priceTitle"><thead><tr><th>Model</th><th>In your logs</th><th>ID</th><th class="num">Input</th><th class="num">Cache write 5m</th><th class="num">Cache write 1h</th><th class="num">Cache read</th><th class="num">Output</th><th>Long prompt</th><th>Fast mode</th></tr></thead><tbody>
+    ${D.prices.map((p) => `<tr style="cursor:default"><td>${esc(p.name)}</td><td>${usedIds.has(p.id.toLowerCase()) ? "Yes" : ""}</td><td class="muted" style="font-family:var(--mono)">${esc(p.id)}</td>
       <td class="num">${money(p.in, "in")}</td><td class="num">${money(p.w5, "w5")}</td><td class="num">${money(p.w1h, "w1h")}</td><td class="num">${money(p.cr, "cr")}</td><td class="num">${money(p.out, "out")}</td>
       <td class="muted">${p.longOver ? `over ${fmtTok(p.longOver)}: ${money(p.lin)} in, ${money(p.lcr)} cached, ${money(p.lout)} out` : ""}</td>
       <td class="muted">${p.fin ? `${money(p.fin)} in, ${money(p.fout)} out` : ""}</td>
-      <td>${usedIds.has(p.id) ? "Yes" : ""}</td></tr>`).join("")}
+      </tr>`).join("")}
   </tbody></table>
   ${D.models.filter((m) => !m.priced).length ? `<div class="note">In your logs with no public API price: ${D.models.filter((m) => !m.priced).map((m) => esc(m.id)).join(", ")}.</div>` : ""}`;
 }
@@ -1474,6 +1515,17 @@ function placeMax() {
 window.addEventListener("resize", () => { if (document.querySelector(".card.max")) placeMax(); });
 new ResizeObserver(() => { if (document.querySelector(".card.max")) placeMax(); }).observe($(".bar2"));
 new ResizeObserver(() => { if (document.querySelector(".card.max")) placeMax(); }).observe($("#update"));
+// Arrows, Home and End move along a segmented control and choose the button, as a radio group does
+document.addEventListener("keydown", (e) => {
+  if (!["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown", "Home", "End"].includes(e.key)) return;
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return; // Alt+Left (back) and the like are not ours
+  const b = e.target.closest && e.target.closest(".seg button");
+  if (!b) return;
+  const all = [...b.parentElement.querySelectorAll("button")];
+  const forward = e.key === "ArrowRight" || e.key === "ArrowDown";
+  const next = e.key === "Home" ? all[0] : e.key === "End" ? all[all.length - 1] : all[(all.indexOf(b) + (forward ? 1 : all.length - 1)) % all.length];
+  e.preventDefault(); next.focus(); next.click();
+});
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-expand]"); if (b && e.detail <= 1) expandCard(b.closest(".card")); });
 document.addEventListener("dblclick", (e) => { const hd = e.target.closest(".board .card .hd"); if (hd && !e.target.closest("button")) expandCard(hd.closest(".card")); });
 let isFullscreen = false;

@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.2.0
+
+**New**
+
+- JTokens reads OpenCode, Pi and Droid logs too, next to Claude Code and Codex. The buttons under the header pick All or one tool. A model used in two tools shows the tool name on its label.
+- Full screen for any card. The Sessions table shows Tool, Project and Last active when there is room.
+- Drag across the daily chart to pick a range of days.
+- Model trend shows each model over time. Running total shows the total building up day by day. The hour chart has a Week view.
+- Project map shows projects as blocks sized by their share of the total.
+- Cache saved shows what your prompt cache saved at API prices.
+- API prices: the "In your logs" column marks the models you used.
+- From the command line, `jtokens --export file.html` writes the dashboard to a file.
+
+**Improved**
+
+- Arrow keys move through the source and range buttons. Home and End jump to the first and last. Arrow keys also move through the Sessions table and the hour grid.
+**Fixed**
+
+- Session names with escaped accented letters show the letters, not gaps.
+- Prices match model names whatever their letter case.
+
 ## v1.1.0
 
 **New**

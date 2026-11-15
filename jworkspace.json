@@ -1,8 +1,8 @@
 {
   "id": "jtokens",
   "name": "JTokens",
-  "description": "Claude Code and Codex token usage and API cost, from your local logs.",
-  "version": "1.1.0",
+  "description": "Token usage and API cost for Claude Code, Codex, OpenCode, Pi and Droid, from your local logs.",
+  "version": "1.2.0",
   "icon": "workspace/icon.svg",
   "page": "ui/index.html",
   "preload": "workspace/preload.cjs",

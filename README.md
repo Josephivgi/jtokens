@@ -1,6 +1,6 @@
 # JTokens
 
-Fast viewer for Claude Code and Codex token usage with API cost estimates.
+Fast viewer for token usage with API cost estimates, for Claude Code, Codex, OpenCode, Pi and Droid.
 It reads the logs already on your computer. Nothing is sent anywhere.
 
 ## Download
@@ -27,15 +27,30 @@ Settings and the WebView2 profile are kept in `%LOCALAPPDATA%\JTokens`.
 - `src/prices.rs`: API list prices per million tokens, with source links and the date they were checked.
 - `ui/index.html`: dashboard. Plain HTML, CSS, JS, and SVG charts. No libraries.
 
-Reads `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**`, and `~/.codex/archived_sessions/`.
-Claude requests are deduped by message id. Codex forked sessions replay the parent's
-token events, so Codex events are deduped by their cumulative total plus per-turn numbers.
+Reads `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**`, and `~/.codex/archived_sessions/`,
+`~/.local/share/opencode/opencode.db` (OpenCode, read-only), `~/.pi/agent/sessions/**/*.jsonl` (Pi),
+and `~/.factory/sessions/**/*.settings.json` (Droid). The source buttons choose one harness or All.
+Each harness is deduped on its own: Claude requests by message id, Pi requests by message id and time,
+OpenCode by message id. Codex forked sessions replay the parent's token events, so Codex events are
+deduped by their cumulative total plus per-turn numbers. The same id under two harnesses counts twice.
+Pi and OpenCode record each request. Droid records only a running total per session, so each session's
+total is counted at the time its file was last saved.
 
 ## Build from source
 
     cargo build --release
 
 Needs the Rust MSVC toolchain and Visual Studio Build Tools (for `ml64.exe`).
+
+## Tests
+
+    cargo test --release --locked      unit tests: every reader, the price math, the dedupe (src/tests.rs)
+    cargo build --release --locked
+    node tests/e2e/run.mjs             end-to-end: the real exe reads a fake home folder with logs for
+                                       all five harnesses, then headless Edge checks each number and the
+                                       narrow layout (needs Microsoft Edge; uses no real logs)
+
+The release workflow runs both before it publishes anything.
 
 ## Command line
 

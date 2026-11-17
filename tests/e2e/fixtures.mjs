@@ -20,11 +20,22 @@ const PRICE = {
   'claude-sonnet-5-5': { input: 2.0, read: 0.10, write5m: 2.5, output: 10.0 },
   'gpt-6-sol': { input: 2.0, read: 0.20, write5m: 0, output: 10.0 },
   'gpt-5.6-sol': { input: 4.0, read: 0.40, write5m: 0, output: 20.0 },
+  // DeepSeek: peak rates, and off-peak (half) outside 01-04 and 06-10 UTC on weekdays
+  'deepseek-v4.1-flash': { input: 0.30, read: 0.006, write5m: 0, output: 1.20, off: { input: 0.15, read: 0.003, write5m: 0, output: 0.60 } },
 };
 
-function costOf(model, u) {
-  const p = PRICE[model];
+// DeepSeek's peak hours, in UTC, Monday to Friday (the same rule as src/prices.rs)
+function deepseekPeak(ms) {
+  const d = new Date(ms);
+  const wd = d.getUTCDay();
+  const h = d.getUTCHours();
+  return wd >= 1 && wd <= 5 && ((h >= 1 && h < 4) || (h >= 6 && h < 10));
+}
+
+function costOf(model, u, ms) {
+  let p = PRICE[model];
   if (!p) return 0;
+  if (p.off && !deepseekPeak(ms)) p = p.off;
   return (u.input * p.input + u.cacheRead * p.read + u.cacheWrite * p.write5m + u.output * p.output) / 1e6;
 }
 
@@ -49,10 +60,13 @@ const EVENTS = [
   // Droid (one total per session, placed at the session file's time)
   { h: 'droid', w: 'today', model: 'gpt-6-sol', input: 800, output: 120, cacheRead: 3000, cacheWrite: 40 },
   { h: 'droid', w: 'd45', model: 'gpt-6-sol', input: 90, output: 9, cacheRead: 0, cacheWrite: 0 },
+  // Qwen Code (one record per reply; prompt tokens include the cached part; no price row, so cost 0)
+  { h: 'qwen', w: 'today', model: 'qwen3.5', input: 600, output: 70, cacheRead: 400, cacheWrite: 0 },
+  { h: 'qwen', w: 'd45', model: 'qwen3.5', input: 50, output: 5, cacheRead: 0, cacheWrite: 0 },
 ];
 
-const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Droid'];
-const SRC = { claude: 0, codex: 1, opencode: 2, pi: 3, droid: 4 };
+const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Droid', 'Qwen Code'];
+const SRC = { claude: 0, codex: 1, opencode: 2, pi: 3, droid: 4, qwen: 5 };
 
 function jsonl(lines) {
   return lines.map((o) => JSON.stringify(o)).join('\n') + '\n';
@@ -178,6 +192,22 @@ export function buildFixtures(home, now = Date.now()) {
     write(path.join(folder, `${sid}.jsonl`), jsonl([{ type: 'session_start', id: sid, title: 'New Session', cwd: 'C:\\Users\\test\\droid-proj' }]), at(w));
   }
 
+  // ---- Qwen Code: ~/.qwen/projects/<folder>/chats/<session id>.jsonl, one assistant record per reply
+  for (const w of WIN) {
+    const evs = EVENTS.filter((e) => e.h === 'qwen' && e.w === w);
+    if (!evs.length) continue;
+    const sid = `55555555-0000-4000-8000-000000000${w === 'today' ? '001' : w === 'd45' ? '045' : '065'}`;
+    const lines = evs.map((e, i) => ({
+      uuid: `${sid}-${i}`,
+      timestamp: iso(at(w)),
+      type: 'assistant',
+      cwd: 'C:\\Users\\test\\qwen-proj',
+      model: e.model,
+      usageMetadata: { promptTokenCount: e.input + e.cacheRead, candidatesTokenCount: e.output, thoughtsTokenCount: 0, cachedContentTokenCount: e.cacheRead },
+    }));
+    write(path.join(home, '.qwen', 'projects', '-C-Users-test-qwen-proj', 'chats', `${sid}.jsonl`), jsonl(lines), at(w));
+  }
+
   // ---- expected numbers per harness and window
   const expected = HARNESSES.map(() => ({ today: { tokens: 0, requests: 0, cost: 0, sessions: 0 }, d45: { tokens: 0, requests: 0, cost: 0, sessions: 0 }, d65: { tokens: 0, requests: 0, cost: 0, sessions: 0 } }));
   for (const e of EVENTS) {
@@ -185,7 +215,7 @@ export function buildFixtures(home, now = Date.now()) {
     const u = { input: e.input, output: e.output + (e.reasoning || 0), cacheRead: e.cacheRead, cacheWrite: e.cacheWrite };
     s.tokens += e.input + e.output + (e.reasoning || 0) + e.cacheRead + e.cacheWrite;
     s.requests += 1;
-    s.cost += costOf(e.model, u);
+    s.cost += costOf(e.model, u, at(e.w));
   }
   // each harness writes one session per window that has events
   for (let h = 0; h < HARNESSES.length; h++) for (const w of WIN) {

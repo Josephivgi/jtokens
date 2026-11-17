@@ -108,15 +108,16 @@ fn prices_match_dated_and_tagged_model_names() {
     assert_eq!(prices::lookup("claude-sonnet-5-5").unwrap().id, "claude-sonnet-5-5");
     assert_eq!(prices::lookup("claude-sonnet-5-5-20260101").unwrap().id, "claude-sonnet-5-5");
     assert_eq!(prices::lookup("claude-opus-5-5[1m]").unwrap().id, "claude-opus-5-5");
-    assert!(prices::lookup("deepseek-v4.1-flash").is_none(), "unpriced models have no price row");
+    assert!(prices::lookup("muse-spark-1.3-contributor").is_none(), "unpriced models have no price row");
+    assert!(prices::lookup("deepseek-v4-flash-free").is_none(), "free tiers have no price row, so they cost 0");
 }
 
 #[test]
 fn cost_uses_list_prices_per_million_tokens() {
     let p = prices::lookup("claude-sonnet-5-5").unwrap(); // $2 in, $0.10 cache read, $10 out
-    let one_million_input = prices::Use { input: 1_000_000, cache_w5m: 0, cache_w1h: 0, cache_read: 0, output: 0, fast: false };
+    let one_million_input = prices::Use { input: 1_000_000, cache_w5m: 0, cache_w1h: 0, cache_read: 0, output: 0, fast: false, ts: 0 };
     assert!((prices::cost(p, &one_million_input) - 2.0).abs() < 1e-9);
-    let mixed = prices::Use { input: 0, cache_w5m: 1_000_000, cache_w1h: 0, cache_read: 1_000_000, output: 1_000_000, fast: false };
+    let mixed = prices::Use { input: 0, cache_w5m: 1_000_000, cache_w1h: 0, cache_read: 1_000_000, output: 1_000_000, fast: false, ts: 0 };
     // cache write (5 minute) is 1.25x input, cache read is 0.10, output is 10
     assert!((prices::cost(p, &mixed) - (2.5 + 0.10 + 10.0)).abs() < 1e-9);
 }
@@ -408,24 +409,123 @@ fn records_without_an_id_are_never_merged() {
 fn the_page_gets_every_harness_name_and_model_source() {
     let files = vec![one_event_file(Src::Droid, "d", 7, 5)];
     let t = build_json(&files, &ScanStats::default());
-    assert!(t.json.contains(r#""harnesses":["Claude Code","Codex","OpenCode","Pi","Droid"]"#), "{}", &t.json[..t.json.len().min(300)]);
+    assert!(t.json.contains(r#""harnesses":["Claude Code","Codex","OpenCode","Pi","Droid","Qwen Code"]"#), "{}", &t.json[..t.json.len().min(300)]);
     assert!(t.json.contains(r#""models":[{"src":4,"#), "model is tagged with its harness");
 }
 
 #[test]
 fn harness_list_and_source_numbers_agree() {
-    assert_eq!(HARNESS_NAMES.len(), 5);
-    for (i, src) in [Src::Claude, Src::Codex, Src::OpenCode, Src::Pi, Src::Droid].into_iter().enumerate() {
+    assert_eq!(HARNESS_NAMES.len(), 6);
+    for (i, src) in [Src::Claude, Src::Codex, Src::OpenCode, Src::Pi, Src::Droid, Src::Qwen].into_iter().enumerate() {
         assert_eq!(src as usize, i, "the page indexes harnesses by these numbers");
     }
 }
 
 #[test]
 fn unpriced_models_count_tokens_but_not_cost() {
-    let mut fd = FileData { src: Src::OpenCode, size: 0, mtime: 0, session: "s".into(), cwd: r"C:\p".into(), title: String::new(), models: vec!["deepseek-v4.1-flash".into()], events: Vec::new() };
+    let mut fd = FileData { src: Src::OpenCode, size: 0, mtime: 0, session: "s".into(), cwd: r"C:\p".into(), title: String::new(), models: vec!["muse-spark-1.3-contributor".into()], events: Vec::new() };
     fd.events.push(Event { ts: 1_794_621_600, model: 0, input: 1_000_000, output: 0, cache_read: 0, cache_w5m: 0, cache_w1h: 0, id: 1, fast: false });
     let t = build_json(&[Arc::new(fd)], &ScanStats::default());
     assert_eq!(t.tokens, 1_000_000);
     assert_eq!(t.cost, 0.0);
     assert!(t.json.contains(r#""priced":false"#));
+}
+
+// ---------------------------------------------------------------- prices and the Qwen Code reader
+
+fn use_at(input: u64, output: u64, ts: u64) -> prices::Use {
+    prices::Use { input, cache_w5m: 0, cache_w1h: 0, cache_read: 0, output, fast: false, ts }
+}
+
+#[test]
+fn provider_prefix_is_dropped_before_lookup() {
+    assert!(std::ptr::eq(prices::lookup("opencode/glm-5.3-flash").unwrap(), prices::lookup("glm-5.3-flash").unwrap()));
+}
+
+#[test]
+fn deepseek_uses_peak_rate_in_peak_hours_and_half_off_peak() {
+    let p = prices::lookup("deepseek-v4.1-flash").unwrap();
+    // 2026-11-19 is a Thursday. 02:00 UTC is peak: $0.30 in, $1.20 out per million
+    let peak = 1_795_053_600u64;
+    assert_eq!(peak % 86_400 / 3_600, 2);
+    assert!(prices::deepseek_peak_hour(peak));
+    assert!((prices::cost(p, &use_at(1_000_000, 1_000_000, peak)) - 1.50).abs() < 1e-9);
+    // 05:00 UTC the same day is off-peak: half price
+    let off = peak + 3 * 3600;
+    assert!(!prices::deepseek_peak_hour(off));
+    assert!((prices::cost(p, &use_at(1_000_000, 1_000_000, off)) - 0.75).abs() < 1e-9);
+    // Saturday 02:00 UTC is off-peak all day
+    assert!(!prices::deepseek_peak_hour(peak + 2 * 86_400));
+}
+
+#[test]
+fn deepseek_peak_hours_are_exact_at_their_edges() {
+    let thu = 1_795_046_400u64; // Thursday 2026-11-19 00:00 UTC
+    let at = |h: u64| thu + h * 3600;
+    assert!(!prices::deepseek_peak_hour(at(0)));
+    assert!(prices::deepseek_peak_hour(at(1)));
+    assert!(prices::deepseek_peak_hour(at(3)));
+    assert!(!prices::deepseek_peak_hour(at(4)));
+    assert!(!prices::deepseek_peak_hour(at(5)));
+    assert!(prices::deepseek_peak_hour(at(6)));
+    assert!(prices::deepseek_peak_hour(at(9)));
+    assert!(!prices::deepseek_peak_hour(at(10)));
+}
+
+#[test]
+fn iso_timestamps_become_unix_seconds() {
+    assert_eq!(iso_seconds("1970-01-01T00:00:00.000Z"), Some(0));
+    assert_eq!(iso_seconds("2000-03-01T00:00:00Z"), Some(951_868_800));
+    assert_eq!(iso_seconds("2026-11-19T02:00:00.000Z"), Some(1_795_053_600));
+    assert_eq!(iso_seconds("not a time"), None);
+    assert_eq!(iso_seconds("2026-13-01T00:00:00Z"), None);
+}
+
+#[test]
+fn grok_long_context_tier_starts_at_200k_prompt_tokens() {
+    let p = prices::lookup("grok-4.7").unwrap();
+    assert!((prices::cost(p, &use_at(199_999, 0, 0)) - 199_999.0 * 2.0 / 1e6).abs() < 1e-9);
+    assert!((prices::cost(p, &use_at(200_000, 0, 0)) - 200_000.0 * 4.0 / 1e6).abs() < 1e-9);
+}
+
+#[test]
+fn kimi_k3_cache_writes_use_its_own_ttl_prices() {
+    let p = prices::lookup("kimi-k3").unwrap();
+    let writes = prices::Use { input: 0, cache_w5m: 1_000_000, cache_w1h: 1_000_000, cache_read: 1_000_000, output: 0, fast: false, ts: 0 };
+    // 5 minute writes at the $3 input price, 1 hour writes at $6, cache read $0.30
+    assert!((prices::cost(p, &writes) - (3.0 + 6.0 + 0.30)).abs() < 1e-9);
+}
+
+#[test]
+fn provider_rows_match_their_pricing_pages() {
+    let kimi = prices::lookup("kimi-k3.1-pro").unwrap();
+    assert!((kimi.base.input - 2.0).abs() < 1e-9 && (kimi.base.output - 10.0).abs() < 1e-9);
+    let mini = prices::lookup("MiniMax-M3").unwrap();
+    assert!((mini.base.input - 0.30).abs() < 1e-9 && mini.long_over == 512_000);
+    let glm = prices::lookup("glm-5.3").unwrap();
+    assert!((glm.base.cache_read - 0.26).abs() < 1e-9);
+    assert!(prices::lookup("deepseek-v4.1-flash-1017").unwrap().off_peak.is_some());
+}
+
+#[test]
+fn qwen_code_reads_usage_thoughts_cache_and_skips_damaged_lines() {
+    let t = TempDir::new("qwen");
+    let text = [
+        r#"{"uuid":"u1","timestamp":"2026-06-13T19:40:48.960Z","type":"user","cwd":"C:\\Users\\Joe\\qproj"}"#,
+        r#"{"uuid":"u2","timestamp":"2026-06-13T19:41:00.000Z","type":"assistant","cwd":"C:\\Users\\Joe\\qproj","model":"qwen3.5","usageMetadata":{"promptTokenCount":1000,"candidatesTokenCount":50,"thoughtsTokenCount":20,"cachedContentTokenCount":300,"totalTokenCount":1070}}"#,
+        r#"{"uuid":"u3","type":"assistant","model":"qwen3.5","usageMetadata":{"promptTokenCount":0,"candidatesTokenCount":0,"thoughtsTokenCount":0,"cachedContentTokenCount":0}}"#,
+        r#"{"uuid":"u4","type":"assistant","model":"qwen3.5","usageMetadata":{"promptTokenCount":"odd","candidatesTokenCount":5}}"#,
+        "this line is damaged {",
+    ]
+    .join("\n");
+    let p = t.write("chats/0123456789abcdef0123456789abcdef0123.jsonl", &text);
+    let mut buf = Vec::new();
+    let fd = parse_qwen(&p, "0123456789abcdef0123456789abcdef0123".into(), 1, 2, &mut buf).expect("parsed");
+    assert_eq!(fd.cwd, r"C:\Users\Joe\qproj");
+    assert_eq!(fd.events.len(), 2, "the zero line is not a request; the odd and damaged lines keep the rest");
+    let e = &fd.events[0];
+    assert_eq!((e.input, e.output, e.cache_read), (700, 70, 300), "the cached part is not input; thoughts are output");
+    assert_eq!(e.ts, 1_781_379_660);
+    assert_eq!(fd.models[e.model as usize], "qwen3.5");
+    assert_ne!(e.id, 0);
 }

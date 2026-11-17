@@ -149,6 +149,7 @@ tbody tr { cursor: pointer; }
 tbody tr:hover td { background-color: var(--surface-2); }
 #priceTable tbody tr:hover td { background-color: transparent; }
 #priceTable th, #priceTable td { padding: 4px 6px; font-size: 12px; } /* the ten price columns fit a 1200px window */
+#priceTable td:first-child, #priceTable td.muted { white-space: normal; overflow-wrap: anywhere; } /* names, ids and prompt tiers wrap so the table keeps the 1200px fit */
 tbody tr[aria-selected="true"] td { background-color: color-mix(in srgb, var(--accent) 14%, var(--surface-1)); }
 tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); } /* a bar too, so the state is not only a tint */
 td.db { background-image: linear-gradient(to right, color-mix(in srgb, var(--accent) 22%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 8px) 4px; background-position: 4px calc(100% - 3px); }
@@ -322,7 +323,8 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
           Claude: cache writes are 1.25x input (5 minute) or 2x input (1 hour); Claude Haiku 5.5 uses the higher row when a prompt is over 100,000 tokens; fast mode uses the fast price with the same cache multipliers.
           OpenAI: cached input uses the cached rate; prompts over 272,000 tokens use the long-context row. Codex priority or fast tiers are not detected and are priced at Standard.
           Models with no public price (for example codex-auto-review) are counted in tokens but not in cost.
-          OpenCode and Pi log every request, so their tokens land on the day they were used. Droid logs only a running total for each session, so its tokens are counted at the time that session was last saved.
+          OpenCode, Pi and Qwen Code log every request, so their tokens land on the day they were used. Droid logs only a running total for each session, so its tokens are counted at the time that session was last saved.
+          DeepSeek is priced at its peak rate, or half that off-peak (01:00 to 04:00 and 06:00 to 10:00 UTC on weekdays are peak). DeepSeek makes Chinese public holidays off-peak; JTokens does not know the holidays, so a holiday weekday is priced as peak.
         </div>
       </div>
     </div>

@@ -103,9 +103,10 @@ enum Src {
     OpenCode = 2,
     Pi = 3,
     Droid = 4,
+    Qwen = 5,
 }
 
-const HARNESS_NAMES: [&str; 5] = ["Claude Code", "Codex", "OpenCode", "Pi", "Droid"];
+const HARNESS_NAMES: [&str; 6] = ["Claude Code", "Codex", "OpenCode", "Pi", "Droid", "Qwen Code"];
 
 struct Event {
     ts: u32,
@@ -299,6 +300,84 @@ fn parse_droid(path: &Path, session: String, size: u64, mtime: u64) -> Option<Fi
     Some(fd)
 }
 
+// Qwen Code: one JSON object per line in ~/.qwen/projects/<folder>/chats/<session>.jsonl. Each
+// model reply carries `usageMetadata` (Gemini style): promptTokenCount includes the cached
+// part, and thoughts are billed as output. Every line also carries `cwd` and an ISO timestamp.
+#[derive(serde::Deserialize)]
+struct QwenLine {
+    uuid: Option<String>,
+    timestamp: Option<String>,
+    // any JSON type here: a line with an odd model must not be dropped whole
+    model: Option<serde_json::Value>,
+    #[serde(rename = "usageMetadata")]
+    usage: Option<QwenUsage>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct QwenUsage {
+    // any JSON type here: a count that is not a number counts as 0 and the rest of the line is kept
+    #[serde(rename = "promptTokenCount", default)]
+    prompt: Option<serde_json::Value>,
+    #[serde(rename = "candidatesTokenCount", default)]
+    candidates: Option<serde_json::Value>,
+    #[serde(rename = "thoughtsTokenCount", default)]
+    thoughts: Option<serde_json::Value>,
+    #[serde(rename = "cachedContentTokenCount", default)]
+    cached: Option<serde_json::Value>,
+}
+
+fn parse_qwen(path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u8>) -> Option<FileData> {
+    buf.clear();
+    fs::File::open(path).ok()?.read_to_end(buf).ok()?;
+    let mut fd = FileData { src: Src::Qwen, size, mtime, session, cwd: String::new(), title: String::new(), models: Vec::new(), events: Vec::new() };
+    // a count that is not a number reads as 0; infinite counts are dropped; negative counts and NaN become 0; huge ones are capped
+    let whole = |x: &Option<serde_json::Value>| x.as_ref().and_then(|v| v.as_f64()).filter(|f| f.is_finite()).map_or(0, |f| f.clamp(0.0, 1e12) as u64);
+    for line in buf.split(|&c| c == b'\n') {
+        if fd.cwd.is_empty() {
+            fd.cwd = str_after(line, b"\"cwd\":\"", line.len()).unwrap_or_default();
+        }
+        if find(line, b"\"usageMetadata\"").is_none() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_slice::<QwenLine>(line) else { continue };
+        let Some(u) = v.usage else { continue };
+        let prompt = whole(&u.prompt);
+        let cached = whole(&u.cached).min(prompt);
+        let output = whole(&u.candidates) + whole(&u.thoughts);
+        if prompt + output == 0 {
+            continue;
+        }
+        let ts = v.timestamp.as_deref().and_then(iso_seconds).unwrap_or(mtime / 1_000_000_000) as u32;
+        let model = v.model.as_ref().and_then(|m| m.as_str()).filter(|s| !s.is_empty()).unwrap_or("unknown");
+        let id = match v.uuid.as_deref().filter(|s| !s.is_empty()) {
+            Some(uuid) => key(&[fd.session.as_bytes(), uuid.as_bytes()]),
+            None => 0,
+        };
+        let model = intern(&mut fd.models, model.as_bytes());
+        fd.events.push(Event { ts, model, input: prompt - cached, output, cache_read: cached, cache_w5m: 0, cache_w1h: 0, id, fast: false });
+    }
+    Some(fd)
+}
+
+// "2026-06-13T19:40:48.960Z" -> unix seconds (UTC). None for anything else.
+fn iso_seconds(s: &str) -> Option<u64> {
+    let num = |a: usize, z: usize| s.get(a..z)?.parse::<i64>().ok();
+    let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (h, mi, se) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || !(0..=23).contains(&h) || !(0..=59).contains(&mi) || !(0..=60).contains(&se) {
+        return None;
+    }
+    // days since 1970-01-01 (proleptic Gregorian, H. Hinnant's civil-from-days inverse)
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = (if y2 >= 0 { y2 } else { y2 - 399 }) / 400;
+    let yoe = y2 - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    u64::try_from(days * 86_400 + h * 3_600 + mi * 60 + se).ok()
+}
+
 // A stored value as text, whatever its type; None for NULL or binary data.
 fn stored_text(v: rusqlite::types::Value) -> Option<String> {
     use rusqlite::types::Value;
@@ -412,6 +491,7 @@ fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf
     match src {
         Src::Pi => return parse_pi(path, session, size, mtime, buf),
         Src::Droid => return parse_droid(path, session, size, mtime),
+        Src::Qwen => return parse_qwen(path, session, size, mtime, buf),
         _ => {}
     }
     read_padded(path, buf).ok()?;
@@ -658,6 +738,7 @@ impl Scanner {
         let codex_dir = std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| h.join(".codex"));
         let pi_dir = h.join(".pi").join("agent").join("sessions");
         let droid_dir = h.join(".factory").join("sessions");
+        let qwen_dir = h.join(".qwen").join("projects");
         let oc_db = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| h.join(".local").join("share")).join("opencode").join("opencode.db");
         let mut jobs = Vec::new();
         for (src, dir, suffix) in [
@@ -666,6 +747,7 @@ impl Scanner {
             (Src::Codex, codex_dir.join("archived_sessions"), ".jsonl"),
             (Src::Pi, pi_dir, ".jsonl"),
             (Src::Droid, droid_dir, ".settings.json"),
+            (Src::Qwen, qwen_dir, ".jsonl"),
         ] {
             let paths = walk_parallel(&dir, suffix);
             for (p, size, mtime) in paths {
@@ -897,6 +979,7 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
                 cache_read: e.cache_read,
                 output: e.output,
                 fast: e.fast,
+                ts: e.ts as u64,
             };
             let cost = price.map(|p| prices::cost(p, &u)).unwrap_or(0.0);
             let a = rows.entry((mi, s, e.ts / 3600)).or_default();

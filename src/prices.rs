@@ -1,11 +1,15 @@
-// API list prices in USD per million tokens, checked 2026-11-10.
-// Claude: https://platform.claude.com/docs/en/about-claude/pricing
-// OpenAI: https://developers.openai.com/api/docs/pricing (Standard tier)
+// API list prices in USD per million tokens. Each row is from the provider's own pricing page
+// (see SOURCES); rows marked "aggregator" are not on the provider's page and should be re-checked.
 
-pub const CHECKED: &str = "2026-11-10";
-pub const SOURCES: [&str; 2] = [
+pub const CHECKED: &str = "2026-11-17";
+pub const SOURCES: &[&str] = &[
     "https://platform.claude.com/docs/en/about-claude/pricing",
     "https://developers.openai.com/api/docs/pricing",
+    "https://api-docs.deepseek.com/quick_start/pricing",
+    "https://platform.kimi.ai/docs/pricing/chat",
+    "https://docs.x.ai/developers/models",
+    "https://docs.z.ai/guides/overview/pricing",
+    "https://platform.minimax.io/docs/guides/pricing-paygo",
 ];
 
 #[derive(Clone, Copy)]
@@ -30,6 +34,8 @@ pub struct Price {
     pub fast_out: f64,
     /// Cache read multiplier of base input (fast mode reuses it).
     pub read_mult: f64,
+    /// Off-peak rate, used outside `deepseek_peak_hour` (DeepSeek only). `base` is the peak rate.
+    pub off_peak: Option<Rate>,
 }
 
 const Z: Rate = Rate { input: 0.0, cache_w5m: 0.0, cache_w1h: 0.0, cache_read: 0.0, output: 0.0 };
@@ -40,19 +46,36 @@ const fn claude(input: f64, read: f64, output: f64) -> Rate {
 const fn openai(input: f64, cached: f64, output: f64) -> Rate {
     Rate { input, cache_w5m: 0.0, cache_w1h: 0.0, cache_read: cached, output }
 }
+/// A provider with its own cache write prices (Kimi K3: 5 minute writes at the input price, 1 hour at 2x).
+const fn written(input: f64, w5m: f64, w1h: f64, read: f64, output: f64) -> Rate {
+    Rate { input, cache_w5m: w5m, cache_w1h: w1h, cache_read: read, output }
+}
 const fn c(id: &'static str, name: &'static str, input: f64, read: f64, output: f64) -> Price {
-    Price { id, name, base: claude(input, read, output), long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: read / input }
+    Price { id, name, base: claude(input, read, output), long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: read / input, off_peak: None }
 }
 const fn o(id: &'static str, name: &'static str, input: f64, cached: f64, output: f64) -> Price {
-    Price { id, name, base: openai(input, cached, output), long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: 0.0 }
+    Price { id, name, base: openai(input, cached, output), long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: 0.0, off_peak: None }
 }
+/// OpenAI-style row with a long-context tier above 272k prompt tokens.
 const fn ol(id: &'static str, name: &'static str, b: (f64, f64, f64), l: (f64, f64, f64)) -> Price {
-    Price { id, name, base: openai(b.0, b.1, b.2), long_over: 272_000, long: openai(l.0, l.1, l.2), fast_in: 0.0, fast_out: 0.0, read_mult: 0.0 }
+    olt(id, name, b, 272_000, l)
+}
+/// OpenAI-style row with a long-context tier above `over` prompt tokens (`over` is the last size still at base rate).
+const fn olt(id: &'static str, name: &'static str, b: (f64, f64, f64), over: u64, l: (f64, f64, f64)) -> Price {
+    Price { id, name, base: openai(b.0, b.1, b.2), long_over: over, long: openai(l.0, l.1, l.2), fast_in: 0.0, fast_out: 0.0, read_mult: 0.0, off_peak: None }
+}
+/// Row with its own cache write prices (no long tier).
+const fn wr(id: &'static str, name: &'static str, base: Rate) -> Price {
+    Price { id, name, base, long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: 0.0, off_peak: None }
 }
 const fn fast(mut p: Price, i: f64, out: f64) -> Price {
     p.fast_in = i;
     p.fast_out = out;
     p
+}
+/// DeepSeek: peak rate is the base; off-peak is the cheaper rate outside its peak hours.
+const fn dsk(id: &'static str, name: &'static str, peak: (f64, f64, f64), off: (f64, f64, f64)) -> Price {
+    Price { id, name, base: openai(peak.0, peak.1, peak.2), long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: 0.0, off_peak: Some(openai(off.0, off.1, off.2)) }
 }
 
 pub static PRICES: &[Price] = &[
@@ -78,7 +101,7 @@ pub static PRICES: &[Price] = &[
     Price {
         id: "claude-haiku-5-5", name: "Claude Haiku 5.5",
         base: claude(0.10, 0.01, 0.50), long_over: 100_000, long: claude(0.50, 0.05, 2.50),
-        fast_in: 0.0, fast_out: 0.0, read_mult: 0.1,
+        fast_in: 0.0, fast_out: 0.0, read_mult: 0.1, off_peak: None,
     },
     c("claude-haiku-4-5", "Claude Haiku 4.5", 1.0, 0.10, 5.0),
     c("claude-3-5-haiku", "Claude Haiku 3.5", 0.80, 0.08, 4.0),
@@ -106,13 +129,57 @@ pub static PRICES: &[Price] = &[
     o("gpt-4.1", "GPT-4.1", 2.0, 0.50, 8.0),
     o("o3", "o3", 2.0, 0.50, 8.0),
     o("o4-mini", "o4-mini", 1.10, 0.275, 4.40),
+    // DeepSeek (api-docs.deepseek.com). Peak rates are the base; off-peak is half, see deepseek_peak_hour.
+    // The API serves deepseek-flash as DeepSeek-V4.1-Flash-1017; the older names map to it.
+    dsk("deepseek-v4.1-flash-1017", "DeepSeek V4.1 Flash", (0.30, 0.006, 1.20), (0.15, 0.003, 0.60)),
+    dsk("deepseek-v4.1-flash", "DeepSeek V4.1 Flash", (0.30, 0.006, 1.20), (0.15, 0.003, 0.60)),
+    dsk("deepseek-flash", "DeepSeek V4.1 Flash", (0.30, 0.006, 1.20), (0.15, 0.003, 0.60)),
+    dsk("deepseek-v4-flash", "DeepSeek V4.1 Flash", (0.30, 0.006, 1.20), (0.15, 0.003, 0.60)),
+    dsk("deepseek-v4-pro-0813", "DeepSeek V4 Pro", (1.32, 0.044, 3.96), (0.66, 0.022, 1.98)),
+    dsk("deepseek-v4-pro", "DeepSeek V4 Pro", (1.32, 0.044, 3.96), (0.66, 0.022, 1.98)),
+    // Moonshot Kimi (platform.kimi.ai). Cache writes: 5 minute at input price, 1 hour at 2x (K3 series).
+    wr("kimi-k3.1-pro", "Kimi K3.1 Pro", written(2.0, 2.0, 4.0, 0.20, 10.0)),
+    wr("kimi-k3.1-pro-highspeed", "Kimi K3.1 Pro highspeed", written(4.0, 4.0, 8.0, 0.20, 20.0)),
+    wr("kimi-k3", "Kimi K3", written(3.0, 3.0, 6.0, 0.30, 15.0)),
+    // K2 has no cache write price on the page, so its writes are billed as input here.
+    wr("kimi-k2.7-code","Kimi K2.7 Code", written(0.95, 0.95, 0.95, 0.19, 4.0)),
+    wr("kimi-k2.7-code-highspeed", "Kimi K2.7 Code highspeed", written(1.90, 1.90, 1.90, 0.38, 8.0)),
+    wr("kimi-k2.6", "Kimi K2.6", written(0.95, 0.95, 0.95, 0.16, 4.0)),
+    // xAI Grok (docs.x.ai). Above 200k prompt tokens the long rate applies to the whole request.
+    olt("grok-4.7", "Grok 4.7", (2.0, 0.50, 6.0), 199_999, (4.0, 1.0, 12.0)),
+    olt("grok-4.6", "Grok 4.6", (2.0, 0.50, 6.0), 199_999, (4.0, 1.0, 12.0)),
+    olt("grok-4.5", "Grok 4.5", (2.0, 0.30, 6.0), 199_999, (4.0, 0.60, 12.0)),
+    olt("grok-4.3", "Grok 4.3", (1.25, 0.20, 2.50), 199_999, (2.50, 0.40, 5.00)),
+    olt("grok-build-0.1", "Grok Build 0.1", (1.0, 0.20, 2.0), 199_999, (2.0, 0.40, 4.0)),
+    // Z.ai GLM (docs.z.ai). Free models (GLM-4.7-Flash, GLM-4.5-Flash, GLM-4.6V-Flash) have no row, so they cost $0.
+    o("glm-5.3", "GLM-5.3", 1.40, 0.26, 4.40),
+    o("glm-5.3-flash", "GLM-5.3 Flash", 0.15, 0.03, 0.50),
+    o("glm-5.3-flashx", "GLM-5.3 FlashX", 0.37, 0.075, 1.25),
+    o("glm-5.2", "GLM-5.2", 1.40, 0.26, 4.40),
+    o("glm-5.1", "GLM-5.1", 1.40, 0.26, 4.40),
+    o("glm-5", "GLM-5", 1.00, 0.20, 3.20),
+    o("glm-4.7", "GLM-4.7", 0.60, 0.11, 2.20),
+    o("glm-4.7-flashx", "GLM-4.7 FlashX", 0.07, 0.01, 0.40),
+    o("glm-4.6", "GLM-4.6", 0.60, 0.11, 2.20),
+    o("glm-4.6v", "GLM-4.6V", 0.30, 0.05, 0.90),
+    o("glm-4.5", "GLM-4.5", 0.60, 0.11, 2.20),
+    o("glm-4.5-x", "GLM-4.5-X", 2.20, 0.45, 8.90),
+    o("glm-4.5-air", "GLM-4.5-Air", 0.20, 0.03, 1.10),
+    o("glm-4.5-airx", "GLM-4.5-AirX", 1.10, 0.22, 4.50),
+    o("glm-4.5v", "GLM-4.5V", 0.60, 0.11, 1.80),
+    // MiniMax (platform.minimax.io). Above 512k input tokens the long rate applies.
+    olt("minimax-m3", "MiniMax M3", (0.30, 0.06, 1.20), 512_000, (0.60, 0.12, 2.40)),
+    o("minimax-m3.1-flash", "MiniMax M3.1 Flash", 0.15, 0.015, 0.60),
 ];
 
-/// Id match, ignoring case, after dropping a date suffix (`-20251001`) or a `[1m]` tag.
+/// Id match, ignoring case, after dropping a `provider/` prefix, a date suffix (`-20251001`) or a `[1m]` tag.
 pub fn lookup(model: &str) -> Option<&'static Price> {
     let mut m = model.trim();
     if let Some(i) = m.find('[') {
         m = &m[..i];
+    }
+    if let Some(i) = m.rfind('/') {
+        m = &m[i + 1..];
     }
     if let Some(i) = m.rfind('-') {
         let tail = &m[i + 1..];
@@ -130,11 +197,26 @@ pub struct Use {
     pub cache_read: u64,
     pub output: u64,
     pub fast: bool,
+    /// Unix seconds of the request (any second in the hour is fine for DeepSeek's peak check).
+    pub ts: u64,
+}
+
+/// DeepSeek's peak hours: 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday. Other hours are off-peak.
+/// Chinese public holidays are not known here, so a holiday day is priced as a weekday.
+pub fn deepseek_peak_hour(ts: u64) -> bool {
+    let weekday = (ts / 86_400 + 4) % 7; // 0 = Sunday; 1970-01-01 was a Thursday
+    let hour = (ts % 86_400) / 3_600;
+    (1..=5).contains(&weekday) && ((1..4).contains(&hour) || (6..10).contains(&hour))
 }
 
 pub fn cost(p: &Price, u: &Use) -> f64 {
     let prompt = u.input + u.cache_w5m + u.cache_w1h + u.cache_read;
     let mut r = if p.long_over > 0 && prompt > p.long_over { p.long } else { p.base };
+    if let Some(off) = p.off_peak {
+        if !deepseek_peak_hour(u.ts) {
+            r = off;
+        }
+    }
     if u.fast && p.fast_in > 0.0 {
         r = Rate {
             input: p.fast_in,

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+**New**
+
+- Qwen Code sessions are read from `~/.qwen/projects`, next to the other tools.
+- API prices for DeepSeek V4.1 Flash and V4 Pro (peak and off-peak), Kimi K3 and K3.1 Pro, Grok 4.7, 4.6, 4.5, 4.3 and Build 0.1, GLM-5.x and 4.x, and MiniMax M3 and M3.1 Flash. Prices come from each provider's own pricing page.
+
+**Fixed**
+
+- Models with a provider prefix (for example `opencode/glm-5.3-flash`) get their price.
+- Price table names and model ids wrap, so the Fast mode column stays in view at 1200px.
+
 ## v1.2.0
 
 **New**

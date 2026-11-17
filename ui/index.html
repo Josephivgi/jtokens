@@ -53,6 +53,7 @@ header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: no
 header .tools { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; margin-left: auto; }
 header h1 { font-size: 15px; font-weight: 650; margin: 0 6px 0 0; letter-spacing: .2px; }
 .seg, .tabs { display: inline-flex; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
+#srcSeg { flex-wrap: wrap; max-width: 100%; } /* eight sources wrap on a narrow window instead of scrolling it */
 .seg button, .tabs button { background: none; border: 0; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; }
 .seg button[aria-pressed="true"], .tabs button[aria-selected="true"] { background: var(--surface-2); color: var(--text-primary); font-weight: 600; }
 .seg button:hover, .tabs button:hover { color: var(--text-primary); }

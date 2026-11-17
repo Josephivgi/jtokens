@@ -1,6 +1,6 @@
 # JTokens
 
-Fast viewer for token usage with API cost estimates, for Claude Code, Codex, OpenCode, Pi, Droid and Qwen Code.
+Fast viewer for token usage with API cost estimates, for Claude Code, Codex, OpenCode, Pi, Droid, Qwen Code and Devin.
 It reads the logs already on your computer. Nothing is sent anywhere.
 
 ## Download
@@ -29,7 +29,7 @@ Settings and the WebView2 profile are kept in `%LOCALAPPDATA%\JTokens`.
 
 Reads `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**`, and `~/.codex/archived_sessions/`,
 `~/.local/share/opencode/opencode.db` (OpenCode, read-only), `~/.pi/agent/sessions/**/*.jsonl` (Pi),
-and `~/.factory/sessions/**/*.settings.json` (Droid), and `~/.qwen/projects/**/chats/*.jsonl` (Qwen Code). The source buttons choose one harness or All.
+and `~/.factory/sessions/**/*.settings.json` (Droid), `~/.qwen/projects/**/chats/*.jsonl` (Qwen Code), and `%APPDATA%Devinclisessions.db` (Devin, read-only). The source buttons choose one harness or All.
 Each harness is deduped on its own: Claude requests by message id, Pi requests by message id and time,
 OpenCode by message id. Codex forked sessions replay the parent's token events, so Codex events are
 deduped by their cumulative total plus per-turn numbers. The same id under two harnesses counts twice.

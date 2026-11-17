@@ -63,10 +63,13 @@ const EVENTS = [
   // Qwen Code (one record per reply; prompt tokens include the cached part; no price row, so cost 0)
   { h: 'qwen', w: 'today', model: 'qwen3.5', input: 600, output: 70, cacheRead: 400, cacheWrite: 0 },
   { h: 'qwen', w: 'd45', model: 'qwen3.5', input: 50, output: 5, cacheRead: 0, cacheWrite: 0 },
+  // Devin CLI (one sessions database; usage in each assistant reply's metrics; no price row, so cost 0)
+  { h: 'devin', w: 'today', model: 'glm-5-3-flash-high', input: 500, output: 60, cacheRead: 200, cacheWrite: 10 },
+  { h: 'devin', w: 'd45', model: 'glm-5-3-flash-high', input: 40, output: 4, cacheRead: 0, cacheWrite: 0 },
 ];
 
-const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Droid', 'Qwen Code'];
-const SRC = { claude: 0, codex: 1, opencode: 2, pi: 3, droid: 4, qwen: 5 };
+const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Droid', 'Qwen Code', 'Devin'];
+const SRC = { claude: 0, codex: 1, opencode: 2, pi: 3, droid: 4, qwen: 5, devin: 6 };
 
 function jsonl(lines) {
   return lines.map((o) => JSON.stringify(o)).join('\n') + '\n';
@@ -208,6 +211,28 @@ export function buildFixtures(home, now = Date.now()) {
     write(path.join(home, '.qwen', 'projects', '-C-Users-test-qwen-proj', 'chats', `${sid}.jsonl`), jsonl(lines), at(w));
   }
 
+  // ---- Devin CLI: %APPDATA%\Devin\cli\sessions.db (one database, a session per window)
+  {
+    const dbPath = path.join(home, 'AppData', 'Roaming', 'Devin', 'cli', 'sessions.db');
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+    const dv = new DatabaseSync(dbPath);
+    dv.exec(`
+      CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT NOT NULL, backend_type TEXT NOT NULL, model TEXT NOT NULL, agent_mode TEXT NOT NULL, created_at INTEGER NOT NULL, last_activity_at INTEGER NOT NULL, title TEXT);
+      CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, node_id INTEGER NOT NULL, parent_node_id INTEGER, chat_message TEXT NOT NULL, created_at INTEGER NOT NULL, metadata TEXT, UNIQUE(session_id, node_id));
+    `);
+    for (const w of WIN) {
+      const evs = EVENTS.filter((e) => e.h === 'devin' && e.w === w);
+      if (!evs.length) continue;
+      const sid = `66666666-0000-4000-8000-000000000${w === 'today' ? '001' : w === 'd45' ? '045' : '065'}`;
+      dv.prepare('INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?)').run(sid, 'C:/Users/test/devin-proj', 'cli', evs[0].model, 'agent', at(w), at(w), `Devin ${w}`);
+      evs.forEach((e, i) => {
+        const msg = { role: 'assistant', content: 'ok', metadata: { generation_model: e.model, metrics: { input_tokens: e.input, output_tokens: e.output, cache_read_tokens: e.cacheRead, cache_creation_tokens: e.cacheWrite } } };
+        dv.prepare('INSERT INTO message_nodes (session_id, node_id, parent_node_id, chat_message, created_at, metadata) VALUES (?,?,?,?,?,?)').run(sid, i + 1, null, JSON.stringify(msg), at(w), null);
+      });
+    }
+    dv.close();
+  }
+
   // ---- expected numbers per harness and window
   const expected = HARNESSES.map(() => ({ today: { tokens: 0, requests: 0, cost: 0, sessions: 0 }, d45: { tokens: 0, requests: 0, cost: 0, sessions: 0 }, d65: { tokens: 0, requests: 0, cost: 0, sessions: 0 } }));
   for (const e of EVENTS) {
@@ -224,7 +249,7 @@ export function buildFixtures(home, now = Date.now()) {
   const sumOf = (list, key) => list.reduce((a, s) => a + s[key], 0);
   return {
     home,
-    env: { USERPROFILE: home, HOME: home, LOCALAPPDATA: path.join(home, 'AppData', 'Local'), XDG_DATA_HOME: path.join(home, 'xdg') },
+    env: { USERPROFILE: home, HOME: home, LOCALAPPDATA: path.join(home, 'AppData', 'Local'), APPDATA: path.join(home, 'AppData', 'Roaming'), XDG_DATA_HOME: path.join(home, 'xdg') },
     harnesses: HARNESSES,
     // the default 30 day range, per harness (index = harness number)
     range30: expected.map((e) => e.today),

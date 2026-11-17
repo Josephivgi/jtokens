@@ -409,14 +409,14 @@ fn records_without_an_id_are_never_merged() {
 fn the_page_gets_every_harness_name_and_model_source() {
     let files = vec![one_event_file(Src::Droid, "d", 7, 5)];
     let t = build_json(&files, &ScanStats::default());
-    assert!(t.json.contains(r#""harnesses":["Claude Code","Codex","OpenCode","Pi","Droid","Qwen Code"]"#), "{}", &t.json[..t.json.len().min(300)]);
+    assert!(t.json.contains(r#""harnesses":["Claude Code","Codex","OpenCode","Pi","Droid","Qwen Code","Devin"]"#), "{}", &t.json[..t.json.len().min(300)]);
     assert!(t.json.contains(r#""models":[{"src":4,"#), "model is tagged with its harness");
 }
 
 #[test]
 fn harness_list_and_source_numbers_agree() {
-    assert_eq!(HARNESS_NAMES.len(), 6);
-    for (i, src) in [Src::Claude, Src::Codex, Src::OpenCode, Src::Pi, Src::Droid, Src::Qwen].into_iter().enumerate() {
+    assert_eq!(HARNESS_NAMES.len(), 7);
+    for (i, src) in [Src::Claude, Src::Codex, Src::OpenCode, Src::Pi, Src::Droid, Src::Qwen, Src::Devin].into_iter().enumerate() {
         assert_eq!(src as usize, i, "the page indexes harnesses by these numbers");
     }
 }
@@ -528,4 +528,55 @@ fn qwen_code_reads_usage_thoughts_cache_and_skips_damaged_lines() {
     assert_eq!(e.ts, 1_781_379_660);
     assert_eq!(fd.models[e.model as usize], "qwen3.5");
     assert_ne!(e.id, 0);
+}
+
+// ---------------------------------------------------------------- Devin CLI sessions database
+
+#[test]
+fn devin_reads_assistant_metrics_per_session_and_skips_the_rest() {
+    let t = TempDir::new("devin");
+    let db = t.path().join("sessions.db");
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT NOT NULL, backend_type TEXT NOT NULL, model TEXT NOT NULL, agent_mode TEXT NOT NULL, created_at INTEGER NOT NULL, last_activity_at INTEGER NOT NULL, title TEXT);
+             CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, node_id INTEGER NOT NULL, parent_node_id INTEGER, chat_message TEXT NOT NULL, created_at INTEGER NOT NULL, metadata TEXT);
+             INSERT INTO sessions (id, working_directory, backend_type, model, agent_mode, created_at, last_activity_at, title) VALUES ('s1', 'C:/Users/t/devin-proj', 'cli', 'm', 'a', 1, 2, 'Fix it');",
+        )
+        .unwrap();
+        let rows: [(&str, i64, &str, &str); 5] = [
+            ("s1", 1_795_053_600_000, "user", r#"{"role":"user","content":"hi"}"#),
+            ("s1", 1_795_053_601_000, "assistant", r#"{"role":"assistant","content":"ok","metadata":{"generation_model":"glm-5-3-flash-high","metrics":{"input_tokens":100,"output_tokens":20,"cache_read_tokens":300,"cache_creation_tokens":5}}}"#),
+            ("s1", 1_795_053_602_000, "assistant", r#"{"role":"assistant","content":"","metadata":{"generation_model":"glm-5-3-flash-high","metrics":{"input_tokens":0,"output_tokens":0,"cache_read_tokens":0,"cache_creation_tokens":0}}}"#),
+            ("s2", 1_795_053_601, "assistant", r#"{"role":"assistant","content":"x","metadata":{"metrics":{"input_tokens":"7","output_tokens":-3,"cache_read_tokens":null,"cache_creation_tokens":0}}}"#),
+            ("s2", 1_795_053_603_000, "assistant", "this is not json cache_read_tokens"),
+        ];
+        for (sid, created, _role, msg) in rows {
+            conn.execute("INSERT INTO message_nodes (session_id, node_id, chat_message, created_at) VALUES (?1, ?2, ?3, ?4)", rusqlite::params![sid, created % 1000, msg, created]).unwrap();
+        }
+    }
+    let files = scan_devin(&db).expect("the database reads");
+    assert_eq!(files.len(), 2, "one file per session");
+    let s1 = files.iter().find(|f| f.session == "s1").unwrap();
+    assert_eq!(s1.cwd, r"C:\Users\t\devin-proj");
+    assert_eq!(s1.title, "Fix it");
+    assert_eq!(s1.events.len(), 1, "the zero-usage reply and the user line are not requests");
+    let e = &s1.events[0];
+    assert_eq!((e.input, e.output, e.cache_read, e.cache_w5m), (100, 20, 300, 5));
+    assert_eq!(e.ts, 1_795_053_601, "milliseconds become seconds");
+    assert_eq!(s1.models[e.model as usize], "glm-5-3-flash-high");
+    let s2 = files.iter().find(|f| f.session == "s2").unwrap();
+    assert_eq!(s2.events.len(), 1, "the broken line is skipped; the text count and negative count are read as 7 and 0");
+    assert_eq!((s2.events[0].input, s2.events[0].output), (7, 0));
+    assert_eq!(s2.events[0].ts, 1_795_053_601, "a value already in seconds is kept");
+    assert_eq!(s2.models[s2.events[0].model as usize], "unknown");
+}
+
+#[test]
+fn devin_database_that_is_missing_or_empty_gives_no_events() {
+    let t = TempDir::new("devin-empty");
+    assert!(scan_devin(&t.path().join("none.db")).is_none(), "a missing database cannot be opened");
+    let db = t.path().join("empty.db");
+    rusqlite::Connection::open(&db).unwrap().execute_batch("CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT, title TEXT); CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY, session_id TEXT, chat_message TEXT, created_at INTEGER);").unwrap();
+    assert_eq!(scan_devin(&db).map(|f| f.len()), Some(0));
 }

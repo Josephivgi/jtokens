@@ -113,6 +113,20 @@ fn prices_match_dated_and_tagged_model_names() {
 }
 
 #[test]
+fn devin_effort_and_speed_tails_still_find_the_model_row() {
+    // Devin's generation_model adds the effort and speed to the vendor's id
+    let opus = prices::lookup("claude-opus-5-5").unwrap();
+    assert!(std::ptr::eq(prices::lookup("claude-opus-5-5-medium").unwrap(), opus));
+    assert!(std::ptr::eq(prices::lookup("claude-opus-5-5-medium-fast").unwrap(), opus));
+    assert!(std::ptr::eq(prices::lookup("claude-fable-5-2-medium").unwrap(), prices::lookup("claude-fable-5-2").unwrap()));
+    // and writes version numbers with dashes: gpt-6-1-sol-low is gpt-6.1-sol at low effort
+    assert!(std::ptr::eq(prices::lookup("gpt-6-1-sol-low").unwrap(), prices::lookup("gpt-6.1-sol").unwrap()));
+    assert!(prices::lookup("swe-2-high").is_none(), "Cognition's own models have no public price");
+    assert!(prices::lookup("swe-2-high-lightning").is_none());
+    assert!(prices::lookup("deepseek-v4-flash-free").is_none(), "a tail that is not a suffix word does not peel");
+}
+
+#[test]
 fn cost_uses_list_prices_per_million_tokens() {
     let p = prices::lookup("claude-sonnet-5-5").unwrap(); // $2 in, $0.10 cache read, $10 out
     let one_million_input = prices::Use { input: 1_000_000, cache_w5m: 0, cache_w1h: 0, cache_read: 0, output: 0, fast: false, ts: 0 };
@@ -570,6 +584,29 @@ fn devin_reads_assistant_metrics_per_session_and_skips_the_rest() {
     assert_eq!((s2.events[0].input, s2.events[0].output), (7, 0));
     assert_eq!(s2.events[0].ts, 1_795_053_601, "a value already in seconds is kept");
     assert_eq!(s2.models[s2.events[0].model as usize], "unknown");
+}
+
+#[test]
+fn devin_speed_tails_mark_the_event_fast() {
+    let t = TempDir::new("devin-fast");
+    let db = t.path().join("sessions.db");
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            r#"CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT, title TEXT);
+             CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, chat_message TEXT, created_at INTEGER);
+             INSERT INTO sessions VALUES ('s1', 'C:/p', 'x');
+             INSERT INTO message_nodes VALUES (1, 's1', '{"role":"assistant","metadata":{"generation_model":"claude-opus-5-5-medium-fast","metrics":{"input_tokens":10,"output_tokens":1,"cache_read_tokens":0}}}', 1795053600000);
+             INSERT INTO message_nodes VALUES (2, 's1', '{"role":"assistant","metadata":{"generation_model":"swe-2-high-lightning","metrics":{"input_tokens":5,"output_tokens":1,"cache_read_tokens":0}}}', 1795053601000);
+             INSERT INTO message_nodes VALUES (3, 's1', '{"role":"assistant","metadata":{"generation_model":"swe-2-high","metrics":{"input_tokens":7,"output_tokens":2,"cache_read_tokens":0}}}', 1795053602000);"#,
+        )
+        .unwrap();
+    }
+    let files = scan_devin(&db).expect("the database reads");
+    let evs = &files[0].events;
+    assert_eq!(evs.len(), 3);
+    assert!(evs[0].fast && evs[1].fast, "-fast and -lightning are speed tiers");
+    assert!(!evs[2].fast);
 }
 
 #[test]

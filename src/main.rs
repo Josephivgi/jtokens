@@ -540,6 +540,9 @@ fn scan_devin(db: &Path) -> Option<Vec<Arc<FileData>>> {
             continue;
         }
         let model = md.get("generation_model").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).unwrap_or("unknown");
+        // a -fast or -lightning tail is Devin's speed tier, billed like other fast modes
+        let lower = model.to_ascii_lowercase();
+        let fast = lower.ends_with("-fast") || lower.ends_with("-lightning");
         if !by.contains_key(&sid) {
             order.push(sid.clone());
             by.insert(
@@ -569,7 +572,7 @@ fn scan_devin(db: &Path) -> Option<Vec<Arc<FileData>>> {
             cache_w5m: cache_write,
             cache_w1h: 0,
             id: key(&[sid.as_bytes(), rid.as_bytes()]),
-            fast: false,
+            fast,
         });
     }
     Some(order.into_iter().filter_map(|s| by.remove(&s)).map(Arc::new).collect())

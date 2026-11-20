@@ -172,6 +172,23 @@ pub static PRICES: &[Price] = &[
     o("minimax-m3.1-flash", "MiniMax M3.1 Flash", 0.15, 0.015, 0.60),
 ];
 
+/// Words Devin adds after the vendor's model id: the effort (low/medium/high/max) and speed
+/// (fast/lightning) the session ran at. They are not part of the billed model, so when a bare
+/// match fails they are peeled off one at a time. Real models ending in these words are still
+/// found first, so they keep their own row.
+const PEEL_SUFFIXES: [&str; 6] = ["low", "medium", "high", "max", "fast", "lightning"];
+
+/// Ids compare in canonical form: lowercase, a dash between digits read as a dot,
+/// so `gpt-6-1-sol` and `gpt-6.1-sol` name the same row.
+fn canon_id(m: &str) -> String {
+    let b = m.as_bytes();
+    let mut s = String::with_capacity(b.len());
+    for (i, &c) in b.iter().enumerate() {
+        s.push(if c == b'-' && i > 0 && i + 1 < b.len() && b[i - 1].is_ascii_digit() && b[i + 1].is_ascii_digit() { '.' } else { c.to_ascii_lowercase() as char });
+    }
+    s
+}
+
 /// Id match, ignoring case, after dropping a `provider/` prefix, a date suffix (`-20251001`) or a `[1m]` tag.
 pub fn lookup(model: &str) -> Option<&'static Price> {
     let mut m = model.trim();
@@ -187,7 +204,25 @@ pub fn lookup(model: &str) -> Option<&'static Price> {
             m = &m[..i];
         }
     }
-    PRICES.iter().find(|p| p.id.eq_ignore_ascii_case(m))
+    let find = |m: &str| {
+        let m = canon_id(m);
+        PRICES.iter().find(|p| canon_id(p.id) == m)
+    };
+    if let Some(p) = find(m) {
+        return Some(p);
+    }
+    let mut base = m;
+    for _ in 0..4 {
+        let Some(i) = base.rfind('-') else { break };
+        if !PEEL_SUFFIXES.contains(&base[i + 1..].to_ascii_lowercase().as_str()) {
+            break;
+        }
+        base = &base[..i];
+        if let Some(p) = find(base) {
+            return Some(p);
+        }
+    }
+    None
 }
 
 pub struct Use {

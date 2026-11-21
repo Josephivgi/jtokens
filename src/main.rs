@@ -7,7 +7,7 @@ mod update;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::io::Read;
@@ -90,6 +90,62 @@ fn json_str_at(buf: &[u8], start: usize) -> String {
 fn str_after(buf: &[u8], key: &[u8], limit: usize) -> Option<String> {
     let lim = buf.len().min(limit);
     find(&buf[..lim], key).map(|i| json_str_at(buf, i + key.len()))
+}
+
+/// The string value for `key` (`"role"`), skipping `":` and spaces. None when
+/// the key or a string is not there.
+fn str_field(buf: &[u8], key: &[u8]) -> Option<String> {
+    let mut i = find(buf, key)? + key.len();
+    while buf.get(i).is_some_and(u8::is_ascii_whitespace) {
+        i += 1;
+    }
+    if buf.get(i) != Some(&b':') {
+        return None;
+    }
+    i += 1;
+    while buf.get(i).is_some_and(u8::is_ascii_whitespace) {
+        i += 1;
+    }
+    (buf.get(i) == Some(&b'"')).then(|| json_str_at(buf, i + 1))
+}
+
+/// The byte span of the `{...}` object value for `key` (`"metadata"`). Cheap to
+/// run on a huge row: the rest of the row never gets parsed as JSON.
+fn json_obj_span(buf: &[u8], key: &[u8]) -> Option<(usize, usize)> {
+    let mut i = find(buf, key)? + key.len();
+    while buf.get(i).is_some_and(u8::is_ascii_whitespace) {
+        i += 1;
+    }
+    if buf.get(i) != Some(&b':') {
+        return None;
+    }
+    i += 1;
+    while buf.get(i).is_some_and(u8::is_ascii_whitespace) {
+        i += 1;
+    }
+    if buf.get(i) != Some(&b'{') {
+        return None;
+    }
+    let start = i;
+    let mut depth = 0usize;
+    let (mut in_str, mut esc) = (false, false);
+    while i < buf.len() {
+        match buf[i] {
+            _ if esc => esc = false,
+            b'\\' if in_str => esc = true,
+            b'"' => in_str = !in_str,
+            b'{' if !in_str => depth += 1,
+            b'}' if !in_str => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((start, i + 1));
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -503,37 +559,73 @@ fn json_count(x: Option<&serde_json::Value>) -> u64 {
 // Devin CLI keeps its sessions in one SQLite database. Each assistant reply in message_nodes
 // carries its usage in chat_message.metadata.metrics. Input is the part that was not cached,
 // cache_read_tokens and cache_creation_tokens are the cached parts (the same reading the
-// Devin token dashboard uses). The whole database is read each time, like OpenCode's.
-// None when it cannot be read right now; the caller keeps its last numbers.
-fn scan_devin(db: &Path) -> Option<Vec<Arc<FileData>>> {
+// Devin token dashboard uses). The database is big and changes all the time, so parsed rows
+// are kept in DvScan and a rescan reads only the new tail. None when the read fails; the
+// caller keeps its last numbers.
+
+/// One Devin usage row, kept so a rescan only has to read new rows.
+struct DvRow {
+    sid: String,
+    secs: i64,
+    model: String,
+    fast: bool,
+    input: u64,
+    output: u64,
+    cache_read: u64,
+    cache_write: u64,
+}
+
+#[derive(Default)]
+struct DvScan {
+    sig: Option<(u64, u64, u64, u64)>,
+    /// the largest row_id scanned
+    max: i64,
+    /// parsed rows by rowid; iterating it walks rows in ORDER BY row_id order
+    rows: BTreeMap<i64, DvRow>,
+    /// session id -> (working directory, title), last seen wins
+    sessions: HashMap<String, (String, String)>,
+    files: Vec<Arc<FileData>>,
+    /// last time every row was read; hourly, in case old rows were edited or deleted
+    last_full: Option<Instant>,
+}
+
+/// A rescan re-reads back to max - DV_TAIL, which catches chat_message rows edited after insert.
+const DV_TAIL: i64 = 1000;
+
+fn scan_devin(db: &Path, st: &mut DvScan) -> Option<()> {
     use rusqlite::types::Value;
     use rusqlite::{Connection, OpenFlags};
     let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX).ok()?;
     let _ = conn.busy_timeout(std::time::Duration::from_secs(2));
+    let full = st.last_full.map_or(true, |t| t.elapsed().as_secs() > 3600);
+    let tail = if full { 0 } else { (st.max - DV_TAIL).max(0) };
     let mut stmt = conn
         .prepare(
             "SELECT m.row_id, m.session_id, m.created_at, m.chat_message, s.working_directory, s.title \
              FROM message_nodes m LEFT JOIN sessions s ON s.id = m.session_id \
-             WHERE m.chat_message LIKE '%cache_read_tokens%' ORDER BY m.row_id",
+             WHERE m.row_id >= ?1 AND m.chat_message LIKE '%cache_read_tokens%' ORDER BY m.row_id",
         )
         .ok()?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok((r.get::<_, Value>(0)?, r.get::<_, Value>(1)?, r.get::<_, Value>(2)?, r.get::<_, Value>(3)?, r.get::<_, Value>(4)?, r.get::<_, Value>(5)?))
-        })
-        .ok()?;
-    // only a failed read (locked, busy, damaged) is fatal
-    let rows: Vec<_> = rows.collect::<Result<Vec<_>, _>>().ok()?;
-    let mut by: HashMap<String, FileData> = HashMap::new();
-    let mut order: Vec<String> = Vec::new();
-    for (rid, sid, created, chat, dir, title) in rows {
-        let (Some(rid), Some(sid), Some(created), Some(chat)) = (stored_text(rid), stored_text(sid), stored_time(created), stored_text(chat)) else { continue };
-        let (dir, title) = (stored_text(dir), stored_text(title));
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&chat) else { continue };
-        if v.get("role").and_then(|x| x.as_str()) != Some("assistant") {
+    let mut rows = stmt.query([tail]).ok()?;
+    let mut got: Vec<(i64, DvRow, String, String)> = Vec::new();
+    loop {
+        // a failed read (locked, busy, damaged) is fatal: the caller keeps the last numbers
+        let r = match rows.next() {
+            Ok(Some(r)) => r,
+            Ok(None) => break,
+            Err(_) => return None,
+        };
+        let (Ok(rid), Ok(sid), Ok(created), Ok(chat), Ok(dir), Ok(title)) =
+            (r.get::<_, Value>(0), r.get::<_, Value>(1), r.get::<_, Value>(2), r.get::<_, Value>(3), r.get::<_, Value>(4), r.get::<_, Value>(5)) else { continue };
+        let (Some(rid), Some(sid), Some(chat), Some(created)) = (stored_text(rid), stored_text(sid), stored_text(chat), stored_time(created)) else { continue };
+        let (dir, title) = (stored_text(dir).unwrap_or_default(), stored_text(title).unwrap_or_default());
+        let cb = chat.as_bytes();
+        if str_field(cb, b"\"role\"").as_deref() != Some("assistant") {
             continue;
         }
-        let Some(md) = v.get("metadata") else { continue };
+        // metrics sits in the small metadata object; the rest of the row is not parsed
+        let Some((a, b)) = json_obj_span(cb, b"\"metadata\"") else { continue };
+        let Ok(md) = serde_json::from_str::<serde_json::Value>(&chat[a..b]) else { continue };
         let Some(metrics) = md.get("metrics") else { continue };
         let (input, output) = (json_count(metrics.get("input_tokens")), json_count(metrics.get("output_tokens")));
         let (cache_read, cache_write) = (json_count(metrics.get("cache_read_tokens")), json_count(metrics.get("cache_creation_tokens")));
@@ -544,39 +636,73 @@ fn scan_devin(db: &Path) -> Option<Vec<Arc<FileData>>> {
         // a -fast or -lightning tail is Devin's speed tier, billed like other fast modes
         let lower = model.to_ascii_lowercase();
         let fast = lower.ends_with("-fast") || lower.ends_with("-lightning");
-        if !by.contains_key(&sid) {
-            order.push(sid.clone());
-            by.insert(
-                sid.clone(),
-                FileData {
+        // created_at is milliseconds in current databases; a value that small is already seconds
+        let secs = if created > 1_000_000_000_000 { created / 1000 } else { created };
+        let Ok(rid) = rid.parse::<i64>() else { continue };
+        got.push((
+            rid,
+            DvRow { sid, secs, model: model.to_string(), fast, input, output, cache_read, cache_write },
+            dir.replace('/', "\\"),
+            title,
+        ));
+    }
+    // the read worked: drop the overlap window and put back its fresh copies
+    if tail > 0 {
+        st.rows.split_off(&tail);
+    } else {
+        st.rows.clear();
+        st.sessions.clear();
+    }
+    for (rid, row, dir, title) in got {
+        st.max = st.max.max(rid);
+        st.sessions.insert(row.sid.clone(), (dir, title));
+        st.rows.insert(rid, row);
+    }
+    if full {
+        st.last_full = Some(Instant::now());
+    }
+    st.files = dv_rebuild(st);
+    Some(())
+}
+
+/// Groups the kept Devin rows into one FileData per session, in row_id order.
+fn dv_rebuild(st: &DvScan) -> Vec<Arc<FileData>> {
+    let mut by: HashMap<String, usize> = HashMap::new();
+    let mut out: Vec<FileData> = Vec::new();
+    for (rid, r) in &st.rows {
+        let i = match by.get(&r.sid) {
+            Some(&i) => i,
+            None => {
+                let (dir, title) = st.sessions.get(&r.sid).cloned().unwrap_or_default();
+                out.push(FileData {
                     src: Src::Devin,
                     size: 0,
                     mtime: 0,
-                    session: sid.clone(),
-                    cwd: dir.unwrap_or_default().replace('/', "\\"),
-                    title: title.unwrap_or_default(),
+                    session: r.sid.clone(),
+                    cwd: dir,
+                    title,
                     models: Vec::new(),
                     events: Vec::new(),
-                },
-            );
-        }
-        let fd = by.get_mut(&sid).expect("inserted above");
-        let model = intern(&mut fd.models, model.as_bytes());
-        // created_at is milliseconds in current databases; a value that small is already seconds
-        let secs = if created > 1_000_000_000_000 { created / 1000 } else { created };
+                });
+                by.insert(r.sid.clone(), out.len() - 1);
+                out.len() - 1
+            }
+        };
+        let fd = &mut out[i];
+        let model = intern(&mut fd.models, r.model.as_bytes());
         fd.events.push(Event {
-            ts: secs as u32,
+            ts: r.secs as u32,
             model,
-            input,
-            output,
-            cache_read,
-            cache_w5m: cache_write,
+            input: r.input,
+            output: r.output,
+            cache_read: r.cache_read,
+            cache_w5m: r.cache_write,
             cache_w1h: 0,
-            id: key(&[sid.as_bytes(), rid.as_bytes()]),
-            fast,
+            id: key(&[r.sid.as_bytes(), rid.to_string().as_bytes()]),
+            fast: r.fast,
         });
     }
-    Some(order.into_iter().filter_map(|s| by.remove(&s)).map(Arc::new).collect())
+    out.into_iter().map(Arc::new).collect()
 }
 
 fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u8>, recs: &mut Vec<Rec>) -> Option<FileData> {
@@ -825,9 +951,8 @@ struct Scanner {
     /// OpenCode's database signature and the sessions read from it last time
     oc_sig: Option<(u64, u64, u64, u64)>,
     oc_files: Vec<Arc<FileData>>,
-    /// Devin's database signature and the sessions read from it last time
-    devin_sig: Option<(u64, u64, u64, u64)>,
-    devin_files: Vec<Arc<FileData>>,
+    /// Devin's incremental database state
+    dv: DvScan,
 }
 
 impl Scanner {
@@ -852,7 +977,7 @@ impl Scanner {
         ] {
             let tw = Instant::now();
             let paths = walk_parallel(&dir, suffix);
-            stats.by_src_ms[src as usize] += tw.elapsed().as_secs_f64() * 1000.0;
+            stats.walk_ms += tw.elapsed().as_secs_f64() * 1000.0;
             for (p, size, mtime) in paths {
                 let session = match src {
                     Src::Claude => claude_session(&p),
@@ -862,35 +987,49 @@ impl Scanner {
                 jobs.push(Job { src, path: p, session, size, mtime });
             }
         }
-        stats.walk_ms = stats.by_src_ms.iter().sum();
 
         // OpenCode: one database. Re-read it only when the database or its write-ahead log changed.
-        let toc = Instant::now();
+        // Devin: the same rule for its sessions database. Both readers run on their own threads,
+        // next to the log parse below, so a big database does not add to the scan's wall time.
         let (db_len, db_mt) = file_sig(&oc_db);
         let (wal_len, wal_mt) = file_sig(&oc_db.with_extension("db-wal"));
         let sig = (db_len, db_mt, wal_len, wal_mt);
-        if self.oc_sig != Some(sig) {
-            // a database that cannot be read now keeps the last numbers, and is tried again on the next scan
-            if let Some(files) = if db_len == 0 { Some(Vec::new()) } else { scan_opencode(&oc_db) } {
-                self.oc_files = files;
-                self.oc_sig = Some(sig);
-            }
-        }
-        stats.opencode_ms = toc.elapsed().as_secs_f64() * 1000.0;
-
-        // Devin: the same rule for its sessions database
-        let tdv = Instant::now();
         let devin_db = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| h.join("AppData").join("Roaming")).join("Devin").join("cli").join("sessions.db");
         let (dv_len, dv_mt) = file_sig(&devin_db);
         let (dvw_len, dvw_mt) = file_sig(&devin_db.with_extension("db-wal"));
         let dsig = (dv_len, dv_mt, dvw_len, dvw_mt);
-        if self.devin_sig != Some(dsig) {
-            if let Some(files) = if dv_len == 0 { Some(Vec::new()) } else { scan_devin(&devin_db) } {
-                self.devin_files = files;
-                self.devin_sig = Some(dsig);
-            }
-        }
-        stats.devin_ms = tdv.elapsed().as_secs_f64() * 1000.0;
+        let oc_t = (self.oc_sig != Some(sig)).then(|| {
+            let db = oc_db.clone();
+            std::thread::spawn(move || {
+                IN_SCAN.with(|c| c.set(true));
+                let t = Instant::now();
+                // a database that cannot be read now keeps the last numbers, and is tried again on the next scan
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| if db_len == 0 { Some(Vec::new()) } else { scan_opencode(&db) }));
+                (r.unwrap_or_default(), t.elapsed())
+            })
+        });
+        let dv_t = (self.dv.sig != Some(dsig)).then(|| {
+            let db = devin_db.clone();
+            let mut dv = std::mem::take(&mut self.dv);
+            std::thread::spawn(move || {
+                IN_SCAN.with(|c| c.set(true));
+                let t = Instant::now();
+                let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if dv_len == 0 {
+                        dv.rows.clear();
+                        dv.sessions.clear();
+                        dv.max = 0;
+                        dv.files = Vec::new();
+                        Some(())
+                    } else {
+                        scan_devin(&db, &mut dv)
+                    }
+                }))
+                .unwrap_or_default()
+                .is_some();
+                (dv, ok, t.elapsed())
+            })
+        });
 
         // the OpenCode and Devin databases count as one file each, however many sessions they hold
         stats.files = jobs.len() + usize::from(db_len > 0) + usize::from(dv_len > 0);
@@ -946,10 +1085,30 @@ impl Scanner {
         // forget files that disappeared
         let live: HashSet<&PathBuf> = jobs.iter().map(|j| &j.path).collect();
         self.cache.retain(|k, _| live.contains(k));
+
+        // the database threads have had the whole log parse to finish; join them now
+        if let Some(h) = oc_t {
+            if let Ok((r, dt)) = h.join() {
+                stats.opencode_ms = dt.as_secs_f64() * 1000.0;
+                if let Some(files) = r {
+                    self.oc_files = files;
+                    self.oc_sig = Some(sig);
+                }
+            }
+        }
+        if let Some(h) = dv_t {
+            if let Ok((dv, ok, dt)) = h.join() {
+                stats.devin_ms = dt.as_secs_f64() * 1000.0;
+                self.dv = dv;
+                if ok {
+                    self.dv.sig = Some(dsig);
+                }
+            }
+        }
         stats.ms = t0.elapsed().as_secs_f64() * 1000.0;
         let mut files: Vec<Arc<FileData>> = result.into_iter().flatten().collect();
         files.extend(self.oc_files.iter().cloned());
-        files.extend(self.devin_files.iter().cloned());
+        files.extend(self.dv.files.iter().cloned());
         (files, stats)
     }
 }

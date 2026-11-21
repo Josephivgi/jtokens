@@ -569,7 +569,9 @@ fn devin_reads_assistant_metrics_per_session_and_skips_the_rest() {
             conn.execute("INSERT INTO message_nodes (session_id, node_id, chat_message, created_at) VALUES (?1, ?2, ?3, ?4)", rusqlite::params![sid, created % 1000, msg, created]).unwrap();
         }
     }
-    let files = scan_devin(&db).expect("the database reads");
+    let mut st = DvScan::default();
+    scan_devin(&db, &mut st).expect("the database reads");
+    let files = st.files;
     assert_eq!(files.len(), 2, "one file per session");
     let s1 = files.iter().find(|f| f.session == "s1").unwrap();
     assert_eq!(s1.cwd, r"C:\Users\t\devin-proj");
@@ -602,8 +604,9 @@ fn devin_speed_tails_mark_the_event_fast() {
         )
         .unwrap();
     }
-    let files = scan_devin(&db).expect("the database reads");
-    let evs = &files[0].events;
+    let mut st = DvScan::default();
+    scan_devin(&db, &mut st).expect("the database reads");
+    let evs = &st.files[0].events;
     assert_eq!(evs.len(), 3);
     assert!(evs[0].fast && evs[1].fast, "-fast and -lightning are speed tiers");
     assert!(!evs[2].fast);
@@ -612,10 +615,44 @@ fn devin_speed_tails_mark_the_event_fast() {
 #[test]
 fn devin_database_that_is_missing_or_empty_gives_no_events() {
     let t = TempDir::new("devin-empty");
-    assert!(scan_devin(&t.path().join("none.db")).is_none(), "a missing database cannot be opened");
+    assert!(scan_devin(&t.path().join("none.db"), &mut DvScan::default()).is_none(), "a missing database cannot be opened");
     let db = t.path().join("empty.db");
     rusqlite::Connection::open(&db).unwrap().execute_batch("CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT, title TEXT); CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY, session_id TEXT, chat_message TEXT, created_at INTEGER);").unwrap();
-    assert_eq!(scan_devin(&db).map(|f| f.len()), Some(0));
+    let mut st = DvScan::default();
+    assert_eq!(scan_devin(&db, &mut st).map(|_| st.files.len()), Some(0));
+}
+
+// The second scan reads only the tail: new rows appear and a chat_message edited
+// after insert inside the overlap window is picked up too.
+#[test]
+fn devin_rescan_merges_new_and_updated_rows() {
+    let t = TempDir::new("devin-incr");
+    let db = t.path().join("sessions.db");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch(
+        r#"CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT, title TEXT);
+           CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, chat_message TEXT, created_at INTEGER);
+           INSERT INTO sessions VALUES ('s1', 'C:/p', 't');
+           INSERT INTO message_nodes VALUES (1, 's1', '{"role":"assistant","metadata":{"metrics":{"input_tokens":10,"output_tokens":1,"cache_read_tokens":0,"cache_creation_tokens":0}}}', 1795053600000);"#,
+    )
+    .unwrap();
+    let mut st = DvScan::default();
+    scan_devin(&db, &mut st).expect("first read");
+    assert_eq!(st.files[0].events.len(), 1);
+    // the row's metrics grew after insert; a brand new row arrived too
+    conn.execute_batch(
+        r#"UPDATE message_nodes SET chat_message = '{"role":"assistant","metadata":{"metrics":{"input_tokens":20,"output_tokens":2,"cache_read_tokens":0,"cache_creation_tokens":0}}}' WHERE row_id = 1;
+           INSERT INTO message_nodes VALUES (2, 's1', '{"role":"assistant","metadata":{"metrics":{"input_tokens":5,"output_tokens":1,"cache_read_tokens":0,"cache_creation_tokens":0}}}', 1795053601000);"#,
+    )
+    .unwrap();
+    scan_devin(&db, &mut st).expect("second read");
+    let evs = &st.files[0].events;
+    assert_eq!(evs.len(), 2);
+    assert_eq!(evs[0].input, 20, "the edited row's new numbers replaced the old");
+    assert_eq!(evs[1].input, 5);
+    // a third scan with no change gives the same files
+    scan_devin(&db, &mut st).expect("third read");
+    assert_eq!(st.files[0].events.len(), 2);
 }
 
 // One test drives the alert engine end to end (the log path is a shared env

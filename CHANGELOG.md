@@ -4,6 +4,10 @@
 
 **New**
 
+- JTokens alerts: a new Alerts tab. Set limits for API cost in an hour, tokens in an hour, and API cost in 24 hours. When usage crosses a limit JTokens shows a Windows notification, flashes the taskbar button, and logs it under Recent alerts. A fired alert stays quiet for a while and re-arms when usage falls back under half the limit. Limits live in settings.txt, and a limit of 0 turns that alert off.
+- Keep watching in the background rescans the logs every 30 seconds, even while the window is minimized.
+- Usage report on the Alerts tab: this hour and the last 24 hours, top days by cost and by tokens, the peak hour and busiest hours and weekday, and the biggest session. Copy report writes it as text. It uses all kept logs for the selected tool.
+- `jtokens --toast-test` shows a test notification, so alerts can be checked without waiting for real usage.
 - Qwen Code sessions are read from `~/.qwen/projects`, next to the other tools.
 - Devin sessions are read from `%APPDATA%\Devin\cli\sessions.db`, next to the other tools.
 - API prices for DeepSeek V4.1 Flash and V4 Pro (peak and off-peak), Kimi K3 and K3.1 Pro, Grok 4.7, 4.6, 4.5, 4.3 and Build 0.1, GLM-5.x and 4.x, and MiniMax M3 and M3.1 Flash. Prices come from each provider's own pricing page.

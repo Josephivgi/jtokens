@@ -295,6 +295,26 @@ async function main() {
   await send('Emulation.setDeviceMetricsOverride', { width: 1360, height: 900, deviceScaleFactor: 1, mobile: false });
   await sleep(400);
 
+  // 8c6. the Alerts tab: the report renders from the same rows the dashboard uses
+  await evaluate(`document.querySelector('[role="tab"][data-tab="alerts"]').click()`);
+  await sleep(300);
+  const al = await evaluate(`(() => ({
+    rep: document.querySelector('#report').innerText,
+    status: document.querySelector('#alStatus').textContent,
+    rangeHidden: getComputedStyle(document.querySelector('#rangeSeg')).display === 'none',
+    metricHidden: getComputedStyle(document.querySelector('#metricSeg')).display === 'none',
+    srcVisible: getComputedStyle(document.querySelector('#srcSeg')).display !== 'none',
+    cfgDisabled: document.querySelector('#alOn').disabled && document.querySelector('#alTest').disabled,
+    list: document.querySelector('#alertList').innerText,
+  }))()`);
+  check('Alerts tab: the report lists top days by cost and tokens', !!al && al.rep.includes('Top days by API cost') && al.rep.includes('Top days by tokens'), String(al && al.rep).slice(0, 200));
+  check('Alerts tab: the report has a "Right now" section', !!al && al.rep.includes('This hour') && al.rep.includes('Last 24 hours'), String(al && al.rep).slice(0, 200));
+  check('Alerts tab: range and measure filters hide, the source picker stays', !!al && al.rangeHidden && al.metricHidden && al.srcVisible, JSON.stringify(al));
+  check('Alerts tab: no app behind the export disables the notification controls', !!al && al.cfgDisabled && al.status.includes('JTokens'), String(al && al.status));
+  check('Alerts tab: the empty alert history reads as empty', !!al && al.list.includes('No alerts yet'), String(al && al.list).slice(0, 120));
+  await evaluate(`document.querySelector('[role="tab"][data-tab="overview"]').click()`);
+  await sleep(200);
+
   // 8d. a home folder with no logs: the page says so, and shows no usage
   const emptyHome = fs.mkdtempSync(path.join(os.tmpdir(), 'jt-e2e-empty-'));
   emptyDirs.push(emptyHome);

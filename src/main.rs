@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+mod alerts;
 mod prices;
 mod update;
 
@@ -811,6 +812,11 @@ struct ScanStats {
     bytes: u64,
     parsed_bytes: u64,
     ms: f64,
+    /// timing detail: directory walk, each database read, and ms per log-file harness
+    walk_ms: f64,
+    opencode_ms: f64,
+    devin_ms: f64,
+    by_src_ms: [f64; 7],
 }
 
 #[derive(Default)]
@@ -834,6 +840,7 @@ impl Scanner {
         let droid_dir = h.join(".factory").join("sessions");
         let qwen_dir = h.join(".qwen").join("projects");
         let oc_db = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| h.join(".local").join("share")).join("opencode").join("opencode.db");
+        let mut stats = ScanStats::default();
         let mut jobs = Vec::new();
         for (src, dir, suffix) in [
             (Src::Claude, claude_dir.join("projects"), ".jsonl"),
@@ -843,7 +850,9 @@ impl Scanner {
             (Src::Droid, droid_dir, ".settings.json"),
             (Src::Qwen, qwen_dir, ".jsonl"),
         ] {
+            let tw = Instant::now();
             let paths = walk_parallel(&dir, suffix);
+            stats.by_src_ms[src as usize] += tw.elapsed().as_secs_f64() * 1000.0;
             for (p, size, mtime) in paths {
                 let session = match src {
                     Src::Claude => claude_session(&p),
@@ -853,8 +862,10 @@ impl Scanner {
                 jobs.push(Job { src, path: p, session, size, mtime });
             }
         }
+        stats.walk_ms = stats.by_src_ms.iter().sum();
 
         // OpenCode: one database. Re-read it only when the database or its write-ahead log changed.
+        let toc = Instant::now();
         let (db_len, db_mt) = file_sig(&oc_db);
         let (wal_len, wal_mt) = file_sig(&oc_db.with_extension("db-wal"));
         let sig = (db_len, db_mt, wal_len, wal_mt);
@@ -865,8 +876,10 @@ impl Scanner {
                 self.oc_sig = Some(sig);
             }
         }
+        stats.opencode_ms = toc.elapsed().as_secs_f64() * 1000.0;
 
         // Devin: the same rule for its sessions database
+        let tdv = Instant::now();
         let devin_db = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(|| h.join("AppData").join("Roaming")).join("Devin").join("cli").join("sessions.db");
         let (dv_len, dv_mt) = file_sig(&devin_db);
         let (dvw_len, dvw_mt) = file_sig(&devin_db.with_extension("db-wal"));
@@ -877,9 +890,10 @@ impl Scanner {
                 self.devin_sig = Some(dsig);
             }
         }
+        stats.devin_ms = tdv.elapsed().as_secs_f64() * 1000.0;
 
         // the OpenCode and Devin databases count as one file each, however many sessions they hold
-        let mut stats = ScanStats { files: jobs.len() + usize::from(db_len > 0) + usize::from(dv_len > 0), ..Default::default() };
+        stats.files = jobs.len() + usize::from(db_len > 0) + usize::from(dv_len > 0);
         let mut result: Vec<Option<Arc<FileData>>> = vec![None; jobs.len()];
         let mut todo = Vec::new();
         for (i, j) in jobs.iter().enumerate() {
@@ -897,6 +911,8 @@ impl Scanner {
         let next = AtomicUsize::new(0);
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(32);
         let parsed: Mutex<Vec<(usize, Arc<FileData>)>> = Mutex::new(Vec::with_capacity(todo.len()));
+        // per-harness worker nanoseconds, so the report can name the slow provider
+        let src_ns: [AtomicUsize; 7] = Default::default();
         std::thread::scope(|s| {
             for _ in 0..threads {
                 s.spawn(|| {
@@ -910,14 +926,19 @@ impl Scanner {
                             break;
                         }
                         let j = &jobs[todo[k]];
+                        let tp = Instant::now();
                         if let Some(fd) = parse_file(j.src, &j.path, j.session.clone(), j.size, j.mtime, &mut buf, &mut recs) {
                             local.push((todo[k], Arc::new(fd)));
                         }
+                        src_ns[j.src as usize].fetch_add(tp.elapsed().as_nanos() as usize, Ordering::Relaxed);
                     }
                     parsed.lock().unwrap().extend(local);
                 });
             }
         });
+        for (i, a) in src_ns.iter().enumerate() {
+            stats.by_src_ms[i] += a.load(Ordering::Relaxed) as f64 / 1e6;
+        }
         for (i, fd) in parsed.into_inner().unwrap() {
             self.cache.insert(jobs[i].path.clone(), fd.clone());
             result[i] = Some(fd);
@@ -999,6 +1020,7 @@ struct Totals {
     events: usize,
     cost: f64,
     tokens: u64,
+    recent: alerts::Recent,
 }
 
 /// Writes a file for a command-line flag. A failure is printed and returns false, so the run exits with an error.
@@ -1033,6 +1055,8 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
     let mut seen: HashSet<(u8, u64)> = HashSet::new();
     let mut events = 0usize;
     let (mut tcost, mut ttok) = (0.0f64, 0u64);
+    let mut recent = alerts::Recent::default();
+    let now_secs = std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
 
     // Oldest first, by first event: an original event is always older than a
     // replayed copy in a forked session, so dedupe keeps the original.
@@ -1097,7 +1121,17 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
             a.cost += cost;
             a.reqs += 1;
             tcost += cost;
-            ttok += e.input + e.output + e.cache_read + e.cache_w5m + e.cache_w1h;
+            let etok = e.input + e.output + e.cache_read + e.cache_w5m + e.cache_w1h;
+            ttok += etok;
+            if e.ts as u64 + 3600 >= now_secs {
+                recent.c1 += cost;
+                recent.t1 += etok;
+                recent.r1 += 1;
+            }
+            if e.ts as u64 + 86400 >= now_secs {
+                recent.c24 += cost;
+                recent.t24 += etok;
+            }
             let ss = &mut sessions[s];
             ss.first = ss.first.min(e.ts);
             ss.last = ss.last.max(e.ts);
@@ -1200,8 +1234,9 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
         first = false;
         let _ = write!(j, "[{},{},{},{},{},{},{},{:.6},{}]", m, s, hr, a.input, a.output, a.cache_read, a.cache_write, a.cost, a.reqs);
     }
-    j.push_str("]}");
-    Totals { json: j, events, cost: tcost, tokens: ttok }
+    // the rolling windows the alert rules use, so the page can show the same numbers
+    let _ = write!(j, "],\"recent\":{{\"c1\":{:.6},\"t1\":{},\"r1\":{},\"c24\":{:.6},\"t24\":{}}}}}", recent.c1, recent.t1, recent.r1, recent.c24, recent.t24);
+    Totals { json: j, events, cost: tcost, tokens: ttok, recent }
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,6 +1286,7 @@ const HELP: &str = "JTokens: token usage and API cost for Claude Code, Codex, Op
   jtokens --serve                        scan on each `scan` line from stdin, answer JSON lines
   jtokens --check-update                 say whether a newer release is on GitHub
   jtokens --update [--no-launch]         install the newest release, then start it
+  jtokens --toast-test                   show a test Windows notification
   jtokens --version                      print the version";
 
 thread_local! {
@@ -1317,6 +1353,17 @@ fn main() {
         serve();
         return;
     }
+    if flag("--toast-test") {
+        attach_console();
+        match alerts::Hub::toast_test() {
+            Ok(()) => println!("JTokens test notification sent."),
+            Err(e) => {
+                eprintln!("JTokens could not show the notification: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     // a file flag with no path is an error, not a silent run of the window
     for f in ["--export", "--json"] {
@@ -1337,8 +1384,19 @@ fn main() {
         let tj = tj0.elapsed().as_secs_f64() * 1000.0;
         // the two scans must give the same data; the timings in the scan stats are left out of the comparison
         let warm_same = build_json(&files, &ScanStats::default()).json == build_json(&files2, &ScanStats::default()).json;
+        // per-provider timing detail for the cold scan and the warm one
+        let detail = |s: &ScanStats| {
+            let mut d = String::new();
+            for (i, ms) in s.by_src_ms.iter().enumerate() {
+                if i > 0 {
+                    d.push(',');
+                }
+                let _ = write!(d, "\"{}\":{:.0}", HARNESS_NAMES[i], ms);
+            }
+            format!("{{\"walkMs\":{:.0},\"openCodeMs\":{:.0},\"devinMs\":{:.0},\"bySrcMs\":{{{d}}}}}", s.walk_ms, s.opencode_ms, s.devin_ms)
+        };
         let report = format!(
-            "{{\"coldScanMs\":{:.1},\"warmScanMs\":{:.1},\"warmParsed\":{},\"jsonMs\":{:.1},\"files\":{},\"gb\":{:.2},\"events\":{},\"tokens\":{},\"costUsd\":{:.2},\"avx2\":{},\"warmSame\":{}}}",
+            "{{\"coldScanMs\":{:.1},\"warmScanMs\":{:.1},\"warmParsed\":{},\"jsonMs\":{:.1},\"files\":{},\"gb\":{:.2},\"events\":{},\"tokens\":{},\"costUsd\":{:.2},\"avx2\":{},\"warmSame\":{},\"cold\":{},\"warm\":{}}}",
             st.ms,
             st2.ms,
             st2.parsed,
@@ -1349,7 +1407,9 @@ fn main() {
             t.tokens,
             t.cost,
             unsafe { tk_has_avx2() } != 0,
-            warm_same
+            warm_same,
+            detail(&st),
+            detail(&st2),
         );
         let mut saved = true;
         if let Some(p) = value("--json") {
@@ -1375,6 +1435,7 @@ enum UserEvent {
     Data(String),
     Rendered(String),
     Update(String),
+    Alerts(String),
     Fullscreen(bool),
     ScanFailed,
     Exit,
@@ -1419,8 +1480,17 @@ fn run_gui(smoke: bool, report: Option<String>) {
     }
 
     let scanner = Arc::new(Mutex::new(Scanner::default()));
+    let hub = Arc::new(alerts::Hub::new(proxy.clone(), {
+        use tao::platform::windows::WindowExtWindows;
+        window.hwnd() as isize
+    }, !smoke));
+    if !smoke {
+        let (h, sc, p) = (hub.clone(), scanner.clone(), proxy.clone());
+        std::thread::spawn(move || alerts::watch(h, sc, p));
+    }
     let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let ipc_proxy = proxy.clone();
+    let ipc_hub = hub.clone();
     let log_path = report.as_ref().map(|r| format!("{r}.log"));
     // WebView2 keeps its profile next to the exe by default, which fails when
     // JTokens sits in a folder the user can't write to (Program Files).
@@ -1438,19 +1508,26 @@ fn run_gui(smoke: bool, report: Option<String>) {
                 let sc = scanner.clone();
                 let p = ipc_proxy.clone();
                 let busy = busy.clone();
+                let h = ipc_hub.clone();
                 std::thread::spawn(move || {
                     // a panic in one scan must not leave Refresh and Live stuck
                     IN_SCAN.with(|c| c.set(true));
                     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let mut g = sc.lock().unwrap_or_else(|e| e.into_inner());
                         let (files, st) = g.scan();
-                        build_json(&files, &st).json
+                        let t = build_json(&files, &st);
+                        (t.json, t.recent)
                     }));
                     busy.store(false, Ordering::SeqCst);
-                    let _ = p.send_event(match res {
-                        Ok(json) => UserEvent::Data(json),
-                        Err(_) => UserEvent::ScanFailed,
-                    });
+                    match res {
+                        Ok((json, recent)) => {
+                            let _ = p.send_event(UserEvent::Data(json));
+                            h.eval(&recent);
+                        }
+                        Err(_) => {
+                            let _ = p.send_event(UserEvent::ScanFailed);
+                        }
+                    }
                 });
             } else if let Some(rest) = body.strip_prefix("rendered:") {
                 let _ = ipc_proxy.send_event(UserEvent::Rendered(rest.to_string()));
@@ -1463,6 +1540,13 @@ fn run_gui(smoke: bool, report: Option<String>) {
                         let _ = writeln!(f, "{msg}");
                     }
                 }
+            } else if body == "alerts:get" {
+                let _ = ipc_proxy.send_event(UserEvent::Alerts(ipc_hub.json()));
+            } else if let Some(cfg) = body.strip_prefix("alertcfg:") {
+                ipc_hub.set_from_json(cfg);
+            } else if body == "alerttest" {
+                let h = ipc_hub.clone();
+                std::thread::spawn(move || h.test());
             } else if body == "update:check" {
                 updater.check();
             } else if body == "update:install" {
@@ -1514,6 +1598,9 @@ Details: {e}"
             Event::UserEvent(UserEvent::Update(json)) => {
                 let _ = webview.evaluate_script(&format!("window.tkUpdate && window.tkUpdate({json});"));
             }
+            Event::UserEvent(UserEvent::Alerts(json)) => {
+                let _ = webview.evaluate_script(&format!("window.tkAlerts && window.tkAlerts({json});"));
+            }
             Event::UserEvent(UserEvent::Exit) => *cf = ControlFlow::Exit,
             Event::UserEvent(UserEvent::Fullscreen(on)) => {
                 window.set_fullscreen(if on { Some(tao::window::Fullscreen::Borderless(None)) } else { None });
@@ -1560,23 +1647,56 @@ fn data_dir() -> PathBuf {
 }
 
 fn settings_path() -> PathBuf {
+    // tests point this at a temp file so the real settings are untouched
+    #[cfg(test)]
+    if let Ok(p) = std::env::var("JTOKENS_TEST_SETTINGS") {
+        return PathBuf::from(p);
+    }
     data_dir().join("settings.txt")
 }
 
+// settings.txt holds one key=value per line (theme, alert limits).
+fn settings_read() -> Vec<(String, String)> {
+    fs::read_to_string(settings_path())
+        .map(|s| {
+            s.lines()
+                .filter_map(|l| l.split_once('=').map(|(k, v)| (k.trim().to_string(), v.trim().to_string())))
+                .filter(|(k, _)| !k.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn settings_get(key: &str) -> Option<String> {
+    settings_read().into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
+}
+
+fn settings_set(key: &str, val: &str) {
+    let mut lines = settings_read();
+    match lines.iter_mut().find(|(k, _)| k == key) {
+        Some(kv) => kv.1 = val.to_string(),
+        None => lines.push((key.to_string(), val.to_string())),
+    }
+    let mut s = String::new();
+    for (k, v) in lines {
+        let _ = writeln!(s, "{k}={v}");
+    }
+    let p = settings_path();
+    if let Some(d) = p.parent() {
+        let _ = fs::create_dir_all(d);
+    }
+    let _ = fs::write(p, s);
+}
+
 fn load_theme() -> &'static str {
-    match fs::read_to_string(settings_path()) {
-        Ok(s) if s.lines().any(|l| l.trim() == "theme=light") => "light",
+    match settings_get("theme").as_deref() {
+        Some("light") => "light",
         _ => "dark",
     }
 }
 
 fn save_theme(t: &str) {
-    let p = settings_path();
-    if let Some(d) = p.parent() {
-        let _ = fs::create_dir_all(d);
-    }
-    let _ = fs::write(p, format!("theme={}
-", if t == "light" { "light" } else { "dark" }));
+    settings_set("theme", if t == "light" { "light" } else { "dark" });
 }
 
 fn open_url(url: &str) {

@@ -69,6 +69,10 @@ exports.activate = async (c) => {
     const msg = String(body);
     if (msg === "scan") scan();
     else if (msg.startsWith("log:")) ctx.log(msg.slice(4));
+    // Alerts need the real window: a toast notifier and a watch timer live
+    // there. Here the tab still shows the usage report, but cfg stays null.
+    else if (msg === "alerts:get") run("window.tkAlerts && window.tkAlerts({cfg:null,watching:false,err:null,list:[]})");
+    else if (msg.startsWith("alertcfg:") || msg === "alerttest") {}
     else if (msg.startsWith("open:")) {
       const url = msg.slice(5);
       if (url.startsWith("https://")) shell.openExternal(url);

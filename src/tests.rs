@@ -617,3 +617,68 @@ fn devin_database_that_is_missing_or_empty_gives_no_events() {
     rusqlite::Connection::open(&db).unwrap().execute_batch("CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT, title TEXT); CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY, session_id TEXT, chat_message TEXT, created_at INTEGER);").unwrap();
     assert_eq!(scan_devin(&db).map(|f| f.len()), Some(0));
 }
+
+// One test drives the alert engine end to end (the log path is a shared env
+// var, so the checks stay in a single function). The hub has toasts off, so
+// only the log and the rule state are exercised.
+#[test]
+fn alert_rules_fire_once_then_rearm_below_half() {
+    let t = TempDir::new("alerts");
+    let log = t.path().join("alerts.jsonl");
+    std::env::set_var("JTOKENS_TEST_ALERTS_LOG", &log);
+    std::env::set_var("JTOKENS_TEST_SETTINGS", t.path().join("settings.txt"));
+
+    use tao::platform::windows::EventLoopBuilderExtWindows;
+    let el = tao::event_loop::EventLoopBuilder::<UserEvent>::with_user_event().with_any_thread(true).build();
+    let hub = alerts::Hub::new(el.create_proxy(), 0, false);
+    // tight limits on purpose: costH $1, tokH 100, costD $2
+    hub.set_from_json(r#"{"on":true,"watch":false,"costH":1,"tokH":100,"costD":2}"#);
+    let count = || alerts::list(60).len();
+
+    // the saved settings round-trip through Cfg::load and keep unrelated keys
+    let text = fs::read_to_string(t.path().join("settings.txt")).unwrap();
+    assert!(text.contains("alertCostH=1") && text.contains("alertTokH=100"), "limits saved, got: {text}");
+    let c2 = alerts::Cfg::load();
+    assert_eq!((c2.cost_h, c2.tok_h, c2.cost_d), (1.0, 100, 2.0));
+    settings_set("theme", "dark");
+    let text = fs::read_to_string(t.path().join("settings.txt")).unwrap();
+    assert!(text.contains("theme=dark") && text.contains("alertCostH=1"), "other keys survive a save");
+
+    let mut r = alerts::Recent::default();
+    hub.eval(&r);
+    assert_eq!(count(), 0, "no usage, no alert");
+
+    r.c1 = 1.50;
+    r.t1 = 150;
+    r.r1 = 2;
+    r.c24 = 3.0;
+    r.t24 = 150;
+    hub.eval(&r);
+    assert_eq!(count(), 3, "every rule over its limit fires once");
+    let kinds: Vec<String> = alerts::list(60).iter().map(|a| a.kind.clone()).collect();
+    for k in ["costHour", "tokHour", "costDay"] {
+        assert!(kinds.iter().any(|x| x == k), "{k} fired");
+    }
+
+    hub.eval(&r);
+    assert_eq!(count(), 3, "still over the limit but inside the cooldown: quiet");
+
+    // a fresh hub (like a restart) reads the log and keeps the cooldown
+    let hub2 = alerts::Hub::new(el.create_proxy(), 0, false);
+    hub2.set_from_json(r#"{"costH":1,"tokH":100,"costD":2}"#);
+    hub2.eval(&r);
+    assert_eq!(count(), 3, "a restarted app does not fire the same alerts again");
+
+    // usage falls back under half the limit: the rules re-arm
+    let low = alerts::Recent { c1: 0.10, t1: 10, r1: 1, c24: 0.5, t24: 10 };
+    hub.eval(&low);
+    hub.eval(&r);
+    assert_eq!(count(), 3, "re-armed but still inside the cooldown");
+
+    // alerts off or a zero limit: nothing fires
+    hub.set_from_json(r#"{"on":false}"#);
+    hub.eval(&alerts::Recent { c1: 99.0, t1: 9_000_000, r1: 50, c24: 99.0, t24: 9_000_000 });
+    hub.set_from_json(r#"{"on":true,"costH":0,"tokH":0,"costD":0}"#);
+    hub.eval(&alerts::Recent { c1: 99.0, t1: 9_000_000, r1: 50, c24: 99.0, t24: 9_000_000 });
+    assert_eq!(count(), 3, "off and zero limits stay silent");
+}

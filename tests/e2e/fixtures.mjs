@@ -64,8 +64,8 @@ const EVENTS = [
   { h: 'qwen', w: 'today', model: 'qwen3.5', input: 600, output: 70, cacheRead: 400, cacheWrite: 0 },
   { h: 'qwen', w: 'd45', model: 'qwen3.5', input: 50, output: 5, cacheRead: 0, cacheWrite: 0 },
   // Devin CLI (one sessions database; usage in each assistant reply's metrics; no price row, so cost 0)
-  { h: 'devin', w: 'today', model: 'glm-5-3-flash-high', input: 500, output: 60, cacheRead: 200, cacheWrite: 10 },
-  { h: 'devin', w: 'd45', model: 'glm-5-3-flash-high', input: 40, output: 4, cacheRead: 0, cacheWrite: 0 },
+  { h: 'devin', w: 'today', model: 'swe-2-high', input: 500, output: 60, cacheRead: 200, cacheWrite: 10 },
+  { h: 'devin', w: 'd45', model: 'swe-2-high', input: 40, output: 4, cacheRead: 0, cacheWrite: 0 },
 ];
 
 const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Droid', 'Qwen Code', 'Devin'];

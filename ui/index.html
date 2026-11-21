@@ -205,6 +205,27 @@ svg text.vl { fill: var(--text-secondary); font-size: 11px; }
 @container (max-width: 205px) { .kpi .v.long ~ .spark { transform: scaleX(.6); transform-origin: right center; } }
 /* API prices: the overview filters do nothing there */
 body.on-prices #srcSeg, body.on-prices #rangeSeg, body.on-prices #metricSeg { display: none; }
+/* Alerts: the report shows both measures over all history, so range and measure do not apply */
+body.on-alerts #rangeSeg, body.on-alerts #metricSeg { display: none; }
+.acards { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.acards > .card:first-child { grid-column: 1 / -1; }
+.alrow { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.allimit { color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+.allimit input { width: 90px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; color: var(--text-primary); }
+#alTokH { width: 120px; }
+.alitem { padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+.alitem .t { display: flex; justify-content: space-between; gap: 10px; }
+.alitem .when { color: var(--text-muted); white-space: nowrap; }
+.alitem .d { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+.rep { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; }
+.rep h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.rep .rr { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+.rep .rr > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rep .rr > span:last-child { text-align: right; white-space: nowrap; }
+.rep .rr .sub2 { color: var(--text-muted); }
+@media (max-width: 900px), (max-height: 660px) {
+  .acards { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-auto-rows: minmax(200px, auto); }
+}
 /* a full screen card owns the scroll; the page behind it stays put */
 html:has(body.has-max) { overflow: hidden; }
 .card.max .body { overscroll-behavior: contain; }
@@ -249,6 +270,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
     <h1>JTokens</h1>
     <div class="tabs" role="tablist" aria-label="View">
       <button role="tab" aria-selected="true" data-tab="overview" id="tab-btn-overview" aria-controls="tab-overview">Overview</button>
+      <button role="tab" aria-selected="false" data-tab="alerts" id="tab-btn-alerts" aria-controls="tab-alerts" tabindex="-1">Alerts</button>
       <button role="tab" aria-selected="false" data-tab="prices" id="tab-btn-prices" aria-controls="tab-prices" tabindex="-1">API prices</button>
     </div>
     <div class="seg" id="srcSeg" role="group" aria-label="Source">
@@ -310,6 +332,36 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
       <div class="card">
         <div class="hd"><h2>Token mix</h2><span class="sub">Where the tokens went</span></div>
         <div class="body" id="mix"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-alerts" class="dash" role="tabpanel" aria-labelledby="tab-btn-alerts" hidden>
+    <div class="acards">
+      <div class="card">
+        <div class="hd"><h2>JTokens alerts</h2><span class="sub" id="alStatus">Notifications when usage runs high</span></div>
+        <div class="body">
+          <div class="alrow">
+            <label class="chk"><input type="checkbox" id="alOn"> Notify me when usage is high</label>
+            <label class="chk"><input type="checkbox" id="alWatch"> Keep watching in the background</label>
+            <button class="btn" id="alTest">Send a test notification</button>
+          </div>
+          <div class="alrow" id="alLimits">
+            <label class="allimit">API cost in an hour over <span class="alfield"><input id="alCostH" type="number" min="0" step="0.5" inputmode="decimal"> $</span></label>
+            <label class="allimit">Tokens in an hour over <input id="alTokH" type="number" min="0" step="1000000" inputmode="numeric"></label>
+            <label class="allimit">API cost in 24 hours over <span class="alfield"><input id="alCostD" type="number" min="0" step="1" inputmode="decimal"> $</span></label>
+          </div>
+          <div class="note">Watching checks the logs every 30 seconds, even while the window is minimized. A limit of 0 turns that alert off. Once an alert fires it stays quiet for a while and re-arms when usage falls back under half the limit.</div>
+          <div class="note" id="alErr" role="alert" hidden></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="hd"><h2>Recent alerts</h2><span class="sub">Newest first</span></div>
+        <div class="body" id="alertList"></div>
+      </div>
+      <div class="card">
+        <div class="hd"><h2>Usage report</h2><span class="sub" id="repSub">Where cost and tokens peak</span><span class="spacer"></span><button class="btn" id="copyReport">Copy report</button></div>
+        <div class="body" id="report"></div>
       </div>
     </div>
   </section>
@@ -484,7 +536,7 @@ window.tkData = function (data) {
   showScanInfo();
   D.lastBySrc = D.harnesses.map((_, s) => D.rows.reduce((m, r) => D.models[r[0]].src === s ? Math.max(m, r[2]) : m, 0));
   scanDone();
-  try { render(); } finally { $("#refresh").disabled = !!window.__TK_STATIC; }
+  try { render(); if (!$("#tab-alerts").hidden) renderReport(); } finally { $("#refresh").disabled = !!window.__TK_STATIC; }
   if (!rendered) {
     rendered = true;
     if (window.ipc) window.ipc.postMessage("rendered:" + JSON.stringify(selfCheck()));
@@ -1410,8 +1462,11 @@ document.addEventListener("click", (e) => {
     tip.style.display = "none";
     if (tab.dataset.tab !== "overview" && document.querySelector(".card.max")) { expandCard(null); tab.focus(); }
     document.body.classList.toggle("on-prices", tab.dataset.tab === "prices");
+    document.body.classList.toggle("on-alerts", tab.dataset.tab === "alerts");
     if (tab.dataset.tab === "overview" && overviewDirty) { $("#tab-overview").hidden = false; render(); }
+    if (tab.dataset.tab === "alerts") { $("#tab-alerts").hidden = false; renderAlertTab(); }
     $("#tab-overview").hidden = tab.dataset.tab !== "overview";
+    $("#tab-alerts").hidden = tab.dataset.tab !== "alerts";
     $("#tab-prices").hidden = tab.dataset.tab !== "prices";
     return;
   }
@@ -1699,8 +1754,113 @@ document.addEventListener("click", (e) => {
   if (k === "check") { b.disabled = true; window.ipc.postMessage("update:check"); }
 });
 
+// ---------- alerts: the app keeps the limits, the history and the watch timer;
+// this tab edits the limits, lists fired alerts and builds the usage report
+let AL = null;
+window.tkAlerts = function (u) {
+  AL = u;
+  if (!$("#tab-alerts").hidden) renderAlertTab();
+};
+const fmtClock = (ts) => new Date(ts * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+function renderAlertTab() {
+  applyAlertCfg();
+  renderAlertList();
+  renderReport();
+}
+function applyAlertCfg() {
+  const c = AL && AL.cfg;
+  // no app behind the page (JWorkspace, an export): nothing to notify from
+  for (const id of ["alOn", "alWatch", "alCostH", "alTokH", "alCostD", "alTest"]) $("#" + id).disabled = !c;
+  if (!c) { $("#alStatus").textContent = "The report works here; notifications and watching need the JTokens app"; return; }
+  const set = (id, v, chk) => { const el = $(id); if (document.activeElement === el) return; if (chk) el.checked = !!v; else el.value = v; };
+  set("#alOn", c.on, true); set("#alWatch", c.watch, true);
+  set("#alCostH", c.costH); set("#alTokH", c.tokH); set("#alCostD", c.costD);
+  $("#alStatus").textContent = !c.on ? "Off" : c.watch ? "Watching every 30 s, even minimized" : "On, checked at each scan";
+  const err = $("#alErr");
+  err.hidden = !AL.err;
+  if (AL.err) err.textContent = "The last alert could not pop a notification: " + AL.err;
+}
+function renderAlertList() {
+  const list = (AL && AL.list) || [];
+  $("#alertList").innerHTML = list.length
+    ? list.map((a) => `<div class="alitem"><div class="t"><span>${esc(a.title)}</span><span class="when">${esc(fmtClock(a.ts))}</span></div><div class="d">${esc(a.detail)}</div></div>`).join("")
+    : `<div class="empty">No alerts yet. They land here when a limit is crossed.</div>`;
+}
+for (const id of ["alOn", "alWatch", "alCostH", "alTokH", "alCostD"]) $("#" + id).addEventListener("change", () => {
+  if (!window.ipc) return;
+  window.ipc.postMessage("alertcfg:" + JSON.stringify({
+    on: $("#alOn").checked, watch: $("#alWatch").checked,
+    costH: +$("#alCostH").value || 0, tokH: Math.max(0, Math.round(+$("#alTokH").value) || 0), costD: +$("#alCostD").value || 0,
+  }));
+});
+$("#alTest").addEventListener("click", () => window.ipc && window.ipc.postMessage("alerttest"));
+
+// the report covers all kept logs for the selected source; the date range filter does not apply
+function reportData() {
+  const rows = !D ? [] : D.rows.filter((r) => state.src === "all" || D.models[r[0]].src === +state.src);
+  const cur = Math.floor(Date.now() / 3600000);
+  const out = { cH: 0, tH: 0, rH: 0, c24: 0, t24: 0, perDay: new Map(), perHour: new Map(), perWd: new Map(), perSess: new Map(), peak: null, n: rows.length };
+  for (const r of rows) {
+    const tok = r[3] + r[4] + r[5] + r[6];
+    if (r[2] === cur) { out.cH += r[7]; out.tH += tok; out.rH += r[8]; }
+    if (r[2] >= cur - 23) { out.c24 += r[7]; out.t24 += tok; }
+    const acc = (m, k) => { const a = m.get(k) || [0, 0]; a[0] += r[7]; a[1] += tok; m.set(k, a); return a; };
+    acc(out.perDay, r[9]); acc(out.perHour, r[10]); acc(out.perSess, r[1]);
+    let w = out.perWd.get(r[11]);
+    if (!w) { w = [0, 0, new Set()]; out.perWd.set(r[11], w); }
+    w[0] += r[7]; w[1] += tok; w[2].add(r[9]);
+    if (!out.peak || r[7] > out.peak[7]) out.peak = r;
+  }
+  return out;
+}
+function renderReport() {
+  const d = reportData();
+  $("#repSub").textContent = (state.src === "all" ? "All sources" : SRC_NAME[+state.src]) + ", all logs on disk";
+  if (!d.n) { $("#report").innerHTML = `<div class="empty">No usage in these logs.</div>`; return; }
+  const top = (m, i) => [...m.entries()].filter((e) => e[1][i] > 0).sort((a, b) => b[1][i] - a[1][i]);
+  const rr = (l, v, s2) => `<div class="rr"><span>${l}</span><span>${v}${s2 ? ` <span class="sub2">${s2}</span>` : ""}</span></div>`;
+  const sec = (h, body) => `<div><h3>${h}</h3>${body}</div>`;
+  const dayName = (k) => dayLabel(k);
+  const wd = top(d.perWd, 0)[0], wdDays = wd ? wd[1][2].size : 0;
+  $("#report").innerHTML = `<div class="rep">
+    ${sec("Right now", rr("This hour", colUsd(d.cH), `${fmtTok(d.tH)} tok · ${d.rH} req`) + rr("Last 24 hours", colUsd(d.c24), fmtTok(d.t24) + " tok"))}
+    ${sec("Top days by API cost", top(d.perDay, 0).slice(0, 5).map(([k, a]) => rr(dayName(k), colUsd(a[0]), fmtTok(a[1]) + " tok")).join("") || `<div class="rr"><span class="sub2">No priced usage</span></div>`)}
+    ${sec("Top days by tokens", top(d.perDay, 1).slice(0, 5).map(([k, a]) => rr(dayName(k), fmtTok(a[1]), colUsd(a[0]))).join(""))}
+    ${sec("When it runs hot",
+      (d.peak && d.peak[7] > 0 ? rr("Peak hour", colUsd(d.peak[7]), `${dayLabel(d.peak[9])} ${hourName(d.peak[10])}`) : "") +
+      top(d.perHour, 0).slice(0, 3).map(([h, a]) => rr(hourName(h) + " to " + hourName((h + 1) % 24), colUsd(a[0]), "all days")).join("") +
+      (wd ? rr("Busiest weekday", WEEKDAY_NAMES[wd[0]].slice(0, -1) + "s", `${colUsd(wd[1][0])} · ${wdDays} day${wdDays === 1 ? "" : "s"}`) : ""))}
+    ${sec("Biggest session", top(d.perSess, 0).slice(0, 1).map(([si, a]) => rr(sessTitle(si), colUsd(a[0]), fmtTok(a[1]) + " tok")).join("") || `<div class="rr"><span class="sub2">No priced usage</span></div>`)}
+  </div>`;
+}
+function reportText() {
+  const d = reportData();
+  const top = (m, i) => [...m.entries()].filter((e) => e[1][i] > 0).sort((a, b) => b[1][i] - a[1][i]);
+  const wd = top(d.perWd, 0)[0];
+  const lines = [
+    `JTokens usage report — ${new Date().toLocaleString()} — ${state.src === "all" ? "all sources" : SRC_NAME[+state.src]}`,
+    `Right now: this hour ${colUsd(d.cH)} / ${fmtTok(d.tH)} tokens (${d.rH} requests); last 24 h ${colUsd(d.c24)} / ${fmtTok(d.t24)} tokens`,
+    "Top days by API cost: " + (top(d.perDay, 0).slice(0, 5).map(([k, a]) => `${dayLabel(k)} ${colUsd(a[0])}`).join(", ") || "none priced"),
+    "Top days by tokens: " + top(d.perDay, 1).slice(0, 5).map(([k, a]) => `${dayLabel(k)} ${fmtTok(a[1])}`).join(", "),
+    d.peak && d.peak[7] > 0 ? `Peak hour: ${dayLabel(d.peak[9])} ${hourName(d.peak[10])} — ${colUsd(d.peak[7])}` : "Peak hour: none priced",
+    "Busiest hours of day: " + top(d.perHour, 0).slice(0, 3).map(([h, a]) => `${hourName(h)} ${colUsd(a[0])}`).join(", "),
+    wd ? `Busiest weekday: ${WEEKDAY_NAMES[wd[0]].slice(0, -1)}s — ${colUsd(wd[1][0])} over ${wd[1][2].size} days` : "",
+    "Biggest session: " + (top(d.perSess, 0).slice(0, 1).map(([si, a]) => `${sessTitle(si)} — ${colUsd(a[0])}, ${fmtTok(a[1])} tokens`).join("") || "none priced"),
+  ];
+  return lines.filter(Boolean).join("\n");
+}
+$("#copyReport").addEventListener("click", () => {
+  const b = $("#copyReport");
+  const txt = reportText();
+  const done = () => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy report"; }, 1500); };
+  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(txt).then(done, done); return; }
+  const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select();
+  try { document.execCommand("copy"); } catch (_) {}
+  ta.remove(); done();
+});
+
 if (window.__TK_STATIC) { $("#refresh").disabled = true; $("#live").disabled = true; window.tkData(window.__TK_STATIC); }
-else { requestScan(); if (window.ipc) window.ipc.postMessage("update:ready"); }
+else { requestScan(); if (window.ipc) { window.ipc.postMessage("update:ready"); window.ipc.postMessage("alerts:get"); } }
 </script>
 </body>
 </html>

@@ -78,7 +78,8 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .kpi .l { color: var(--text-secondary); font-size: 12px; }
 .kpi .v { font-size: 20px; font-weight: 650; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kpi .s { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+.board { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) minmax(118px, .4fr); }
+#c-limits { grid-column: 1 / -1; }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
 /* narrow cards drop the hint so the title and buttons fit */
 @container (max-width: 240px) { .card .hd .sub { display: none; } }
@@ -333,6 +334,11 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="hd"><h2>Token mix</h2><span class="sub">Where the tokens went</span></div>
         <div class="body" id="mix"></div>
       </div>
+      <div class="card" id="c-limits">
+        <div class="hd"><h2>Requests & plan limits</h2><span class="sub" id="limSub">Checked every few minutes</span></div>
+        <div class="legend" id="limLegend"></div>
+        <div class="chart" id="limits"></div>
+      </div>
     </div>
   </section>
 
@@ -557,6 +563,8 @@ function selfCheck() {
   return {
     rows: D.rows.length, models: D.models.length, sessions: D.sessions.length,
     dailyBars: document.querySelectorAll("#daily .hit").length,
+    limBars: document.querySelectorAll("#limits .hit").length,
+    limStatus: [...document.querySelectorAll("#limLegend > span")].map((s) => s.textContent.trim()).join("|"),
     modelRows: document.querySelectorAll("#models .hbar").length,
     sessionRows: document.querySelectorAll("#sessions tbody tr").length,
     kpiCost: document.querySelector("#kpis .v") ? document.querySelector("#kpis .v").textContent : null,
@@ -629,7 +637,7 @@ function focusKey(el) {
 }
 const subObs = new MutationObserver((ms) => { for (const m of ms) { const el = m.target.nodeType === 3 ? m.target.parentElement : m.target; if (el && el.id !== "hourSub" && el.id !== "priceSub") el.title = el.textContent; } });
 document.querySelectorAll(".card .hd .sub").forEach((e) => subObs.observe(e, { childList: true, characterData: true, subtree: true }));
-const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):not(.callout):not(.avg-l), #hourly svg text:not(.vl), #modelTrend svg text:not(.callout)").forEach((t) => t.setAttribute("aria-hidden", "true"));
+const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):not(.callout):not(.avg-l), #hourly svg text:not(.vl), #modelTrend svg text:not(.callout), #limits svg text").forEach((t) => t.setAttribute("aria-hidden", "true"));
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
@@ -649,7 +657,7 @@ function render() {
   const base = [state.src, state.range, state.metric, state.day, state.model, state.proj, state.sess];
   // each list ignores its own selection, so clicking a row keeps the list where it was
   const own = { sessions: 6, projects: 5, models: 4 };
-  for (const [f, sel] of [[renderFilters, "#filters"], [renderKpis, "#kpis"], [renderDaily, "#daily"], [renderModels, () => state.modelMode === "trend" ? "#modelTrend" : "#models"], [renderHourly, "#hourly"], [renderMix, "#mix"], [renderSessions, "#sessions"], [renderProjects, () => state.projMode === "map" ? "#projMap" : "#projects"]]) {
+  for (const [f, sel] of [[renderFilters, "#filters"], [renderKpis, "#kpis"], [renderDaily, "#daily"], [renderModels, () => state.modelMode === "trend" ? "#modelTrend" : "#models"], [renderHourly, "#hourly"], [renderMix, "#mix"], [renderSessions, "#sessions"], [renderProjects, () => state.projMode === "map" ? "#projMap" : "#projects"], [renderLimits, "#limits"]]) {
     try { f(); } catch (err) {
       if (window.ipc) window.ipc.postMessage("log:error " + f.name + ": " + (err && err.message));
       if (sel) $(typeof sel === "function" ? sel() : sel).innerHTML = `<div class="empty">Could not draw this ${sel === "#kpis" ? "summary" : sel === "#filters" ? "filter line" : "card"}. Press Refresh to try again.</div>`;
@@ -962,6 +970,7 @@ const chartResize = new ResizeObserver(() => {
     if (!tipFromFocus) { tip.style.display = "none"; tipKey = null; }
     if (size("#daily") !== drawnAt["#daily"]) renderDaily();
     if (size("#hourly") !== drawnAt["#hourly"]) renderHourly();
+    if (size("#limits") !== drawnAt["#limits"]) renderLimits();
     if (state.modelMode === "trend" && size("#modelTrend") !== drawnAt["#modelTrend"]) renderModelTrend();
     if (state.projMode === "map" && size("#projMap") !== drawnAt["#projMap"]) renderProjects();
     hideAxisText();
@@ -970,6 +979,7 @@ const chartResize = new ResizeObserver(() => {
 });
 chartResize.observe($("#daily"));
 chartResize.observe($("#hourly"));
+chartResize.observe($("#limits"));
 chartResize.observe($("#modelTrend"));
 chartResize.observe($("#projMap"));
 
@@ -1216,6 +1226,142 @@ function renderMix() {
   $("#mix").innerHTML = `<div class="mix" role="img" aria-label="Token mix">${t.map((v, i) => v ? `<b style="width:${v / sum * 100}%;background:var(${cols[i]})" title="${names[i]}"></b>` : "").join("")}</div>
     ${t.map((v, i) => `<div class="mixrow" title="${fmtInt(v)} tokens"><span><i style="background:var(${cols[i]})"></i><span class="nm">${names[i]}</span></span><span>${fmtTok(v)}</span><span class="muted">${v && v / sum < 0.0005 ? "<0.1" : (v / sum * 100).toFixed(1)}%</span></div>`).join("")}
     <div class="note">Cache reads cost a small fraction of input, so huge token counts can cost little.</div>`;
+}
+
+// ---------- plan limits: request activity against each provider's reported windows
+// the app polls the five providers every few minutes and feeds tkLimits; the scan
+// JSON carries the same block, so this card also works on exports
+let LIM = null;
+window.tkLimits = function (u) {
+  LIM = u;
+  if (D) D.limits = u;
+  renderLimits();
+};
+const LIM_COLORS = { 0: "--s2", 1: "--s3", 2: "--s7", 4: "--s1", 6: "--s5" };
+const LIM_WIN_ORDER = { "5h": 0, day: 1, wk: 2, mo: 3 };
+const LIM_WIN_NAME = { "5h": "5h", day: "day", wk: "week", mo: "month" };
+const LIM_WIN_DASH = ["", "6 3", "2 2"];
+const limColor = (src) => `var(${LIM_COLORS[src] || "--other"})`;
+const LIM_POLL = 5 * 60; // samples land about this far apart; bigger gaps are off-time
+function lastPtLE(pts, t) {
+  for (let i = pts.length - 1; i >= 0; i--) if (pts[i][0] <= t) return pts[i][1];
+  return null;
+}
+function renderLimits() {
+  if (!D) return;
+  const lim = D.limits || LIM;
+  const latest = (lim && lim.latest) || [];
+  const nameOf = new Map(latest.map((e) => [e.src, e.n]));
+  const series = ((lim && lim.series) || []).filter((s) => s.pts && s.pts.length > 0);
+  $("#limLegend").innerHTML = latest.map((e) => {
+    const c = limColor(e.src);
+    if (e.st === "ok") {
+      const ws = [...e.w].sort((a, b) => (LIM_WIN_ORDER[a[0]] ?? 9) - (LIM_WIN_ORDER[b[0]] ?? 9)).map(([k, p]) => `${LIM_WIN_NAME[k] || k} ${Math.round(p)}%`).join(" · ");
+      return `<span${e.m ? ` title="${esc(e.m)}"` : ""}><i style="background:${c}"></i><em>${esc(e.n)} ${ws}</em></span>`;
+    }
+    const label = e.st === "wait" ? "checking soon" : e.st === "expired" ? (e.m || "sign in again") : (e.m || (e.st === "off" ? "not signed in" : "check failed"));
+    return `<span class="off" title="${esc(e.n + ": " + label)}"><i style="background:${c}"></i><em>${esc(e.n)} <span class="muted">${esc(label)}</span></em></span>`;
+  }).join("");
+  const nowSec = Math.floor(Date.now() / 1000);
+  // the same span the daily chart covers, widened only to reach the first sample
+  let startKey = null;
+  if (RS) startKey = FD() && RS < FD() ? FD() : RS;
+  if (!startKey) {
+    for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { if (!startKey || r[9] < startKey) startKey = r[9]; }
+    for (const s of series) { const k = dayKey(new Date(s.pts[0][0] * 1000)); if (!startKey || k < startKey) startKey = k; }
+    if (!startKey) startKey = dayKey(new Date());
+  }
+  const [y0, m0, d0] = startKey.split("-").map(Number);
+  const startSec = Math.floor(new Date(y0, m0 - 1, d0).getTime() / 1000);
+  // short spans show requests per hour; longer ones per day
+  const hourly = nowSec - startSec <= 2.2 * 86400;
+  const buckets = [];
+  if (hourly) {
+    for (let t = Math.floor(startSec / 3600) * 3600; t < nowSec; t += 3600) buckets.push({ t0: t, t1: t + 3600, k: null });
+  } else {
+    for (const d = new Date(y0, m0 - 1, d0); d.getTime() < Date.now(); d.setDate(d.getDate() + 1)) {
+      const t = Math.floor(d.getTime() / 1000);
+      buckets.push({ t0: t, t1: t + 86400, k: dayKey(d) });
+    }
+  }
+  const n = buckets.length, idx = new Map(buckets.map((b, i) => [hourly ? b.t0 : b.k, i]));
+  const reqs = new Array(n).fill(0);
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreDay: true })) continue;
+    const i = idx.get(hourly ? r[2] * 3600 : r[9]);
+    if (i !== undefined) reqs[i] += r[8];
+  }
+  const maxReq = Math.max(...reqs, 0), hasSeries = series.length > 0;
+  if (!hasSeries && !maxReq) {
+    $("#limSub").textContent = "Checked every few minutes";
+    $("#limits").innerHTML = `<div class="empty">No requests in this range, and no plan-limit readings yet. JTokens asks each signed-in provider every few minutes.</div>`;
+    return;
+  }
+  $("#limSub").textContent = (hourly ? "Requests per hour" : "Requests per day") + (hasSeries ? ", lines are % of plan window used" : ", no plan-limit readings yet");
+  const { W, H } = boxOf("#limits"), B = 22, T = 8, plotH = H - B - T;
+  const ticks = niceTicks(Math.max(maxReq, 4), plotH > 200 ? 4 : 3), top = ticks[ticks.length - 1];
+  // this axis counts requests, not money, whichever measure the page shows
+  const tickN = (v) => v >= 1000 ? fmtTok(v) : Number.isInteger(v) ? String(v) : v.toFixed(1);
+  const L = Math.max(40, Math.ceil(12 + 6.4 * Math.max(...ticks.map((t) => tickN(t).length)))), R = hasSeries ? 34 : 8, plotW = W - L - R;
+  const x = (t) => L + (t - startSec) / Math.max(1, nowSec - startSec) * plotW;
+  const y = (v) => T + plotH - v / top * plotH;
+  const yPct = (p) => T + plotH - Math.min(p, 100) / 100 * plotH;
+  const bucketLabel = (b) => { const d = new Date(b.t0 * 1000); return hourly ? dayLabel(dayKey(d)) + " " + hourName(d.getHours()) : dayLabel(b.k); };
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Requests per ${hourly ? "hour" : "day"} and percent of plan window used. Arrow keys move between ${hourly ? "hours" : "days"}.">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickN(t)}</text>`;
+  if (hasSeries) for (const p of [0, 50, 100]) s += `<text x="${W - 6}" y="${p === 0 ? T + plotH + 15 : yPct(p) + 4}" text-anchor="end">${p}%</text>`;
+  if (!hourly && state.day) buckets.forEach((b) => { if (b.k && inSpan(b.k)) { const x0 = Math.max(L, x(b.t0)), x1 = Math.min(L + plotW, x(b.t1)); s += `<rect class="selected-band" x="${x0}" y="${T}" width="${Math.max(2, x1 - x0)}" height="${plotH}"/>`; } });
+  // request bars stay behind the limit lines
+  buckets.forEach((b, i) => {
+    if (!reqs[i]) return;
+    const bw = Math.max(1, Math.min(40, (x(b.t1) - x(b.t0)) * 0.7)), bx = x(b.t0) + (x(b.t1) - x(b.t0) - bw) / 2, h = y(0) - y(reqs[i]);
+    const part = !hourly && b.k === dayKey(new Date()) ? ' fill-opacity="0.35"' : "";
+    s += `<rect x="${bx.toFixed(1)}" y="${(y(0) - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, h).toFixed(1)}" fill="var(--accent)" fill-opacity="0.42"${part}/>`;
+  });
+  // x labels: day labels for long spans, hour names for today
+  const labelW = hourly ? 34 : Math.max(58, 14 + 6.6 * 8);
+  const every = Math.ceil(n / Math.max(2, Math.floor(plotW / labelW)));
+  buckets.forEach((b, i) => {
+    if ((i % every !== 0 || i === n - 1 && n % every !== 0 && (n - 1 - i) * (x(b.t1) - x(b.t0)) < 20) && i !== n - 1) return;
+    const d = new Date(b.t0 * 1000);
+    const lx = x(b.t0) + (x(b.t1) - x(b.t0)) / 2, end = lx + 40 > W - 2;
+    s += `<text x="${end ? W - 2 : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${hourly ? hourName(d.getHours()) : dayLabel(b.k)}</text>`;
+  });
+  // one line per reported window; a sample gap of over 20 minutes breaks the line
+  for (const s2 of series) {
+    const c = limColor(s2.src), dash = LIM_WIN_DASH[(LIM_WIN_ORDER[s2.w] ?? 0) % 3];
+    let seg = [], segs = [];
+    for (const [t, p] of s2.pts) {
+      if (t > nowSec) break;
+      if (t < startSec) continue;
+      if (seg.length && t - seg[seg.length - 1][0] > 4 * LIM_POLL) { segs.push(seg); seg = []; }
+      seg.push([t, p]);
+    }
+    if (seg.length) segs.push(seg);
+    for (const pts of segs) {
+      if (pts.length === 1) { s += `<circle cx="${x(pts[0][0]).toFixed(1)}" cy="${yPct(pts[0][1]).toFixed(1)}" r="2.4" fill="${c}"/>`; continue; }
+      const d = pts.map(([t, p], i) => `${i ? "L" : "M"}${x(t).toFixed(1)},${yPct(p).toFixed(1)}`).join("");
+      s += `<path d="${d}" fill="none" stroke="${c}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"${dash ? ` stroke-dasharray="${dash}"` : ""}/><circle cx="${x(pts[pts.length - 1][0]).toFixed(1)}" cy="${yPct(pts[pts.length - 1][1]).toFixed(1)}" r="2.2" fill="${c}"/>`;
+    }
+  }
+  buckets.forEach((b, i) => {
+    const parts = [`${fmtInt(reqs[i])} request${reqs[i] === 1 ? "" : "s"}`];
+    for (const s2 of series) { const v = lastPtLE(s2.pts, b.t1 - 1); if (v !== null) parts.push(`${nameOf.get(s2.src) || ""} ${LIM_WIN_NAME[s2.w] || s2.w} ${Math.round(v)}%`); }
+    s += `<rect class="hit" data-i="${i}" x="${x(b.t0).toFixed(1)}" y="${T}" width="${Math.max(1, x(b.t1) - x(b.t0)).toFixed(1)}" height="${plotH}" tabindex="-1" role="img" aria-label="${esc(bucketLabel(b))}: ${esc(parts.join(", "))}"/>`;
+  });
+  s += `</svg>`;
+  $("#limits").innerHTML = s;
+  rove("#limits", ".hit");
+  $("#limits svg")._tip = (i) => {
+    const b = buckets[i];
+    let out = `<div class="h">${bucketLabel(b)}${!hourly && b.k === dayKey(new Date()) ? " so far" : ""}</div><div class="r"><span>Requests</span><span>${fmtInt(reqs[i])}</span></div>`;
+    for (const s2 of series) {
+      const v = lastPtLE(s2.pts, b.t1 - 1);
+      if (v === null) continue;
+      out += `<div class="r"><span><i style="background:${limColor(s2.src)}"></i>${esc(nameOf.get(s2.src) || "")} ${LIM_WIN_NAME[s2.w] || s2.w}</span><span>${Math.round(v)}%</span></div>`;
+    }
+    return out;
+  };
 }
 
 const HOME_RE = /^([a-z]:[\\/]users[\\/][^\\/]+|\/home\/[^\/]+|\/users\/[^\/]+)[\\/]?$/i; // a session started in the home folder has no useful project name
@@ -1860,7 +2006,7 @@ $("#copyReport").addEventListener("click", () => {
 });
 
 if (window.__TK_STATIC) { $("#refresh").disabled = true; $("#live").disabled = true; window.tkData(window.__TK_STATIC); }
-else { requestScan(); if (window.ipc) { window.ipc.postMessage("update:ready"); window.ipc.postMessage("alerts:get"); } }
+else { requestScan(); if (window.ipc) { window.ipc.postMessage("update:ready"); window.ipc.postMessage("alerts:get"); window.ipc.postMessage("limits:get"); } }
 </script>
 </body>
 </html>

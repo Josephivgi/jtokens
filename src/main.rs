@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod alerts;
+mod limits;
 mod prices;
 mod update;
 
@@ -1378,7 +1379,10 @@ fn emit_json(body: &str, recent_evts: &[(u32, f64, u64)], events: usize, st: &Sc
         unsafe { tk_has_avx2() } != 0
     );
     j.push_str(body);
-    let _ = write!(j, ",\"recent\":{{\"c1\":{:.6},\"t1\":{},\"r1\":{},\"c24\":{:.6},\"t24\":{}}}}}", recent.c1, recent.t1, recent.r1, recent.c24, recent.t24);
+    let _ = write!(j, ",\"recent\":{{\"c1\":{:.6},\"t1\":{},\"r1\":{},\"c24\":{:.6},\"t24\":{}}}", recent.c1, recent.t1, recent.r1, recent.c24, recent.t24);
+    j.push_str(",\"limits\":");
+    j.push_str(&limits::json());
+    j.push('}');
     (j, recent)
 }
 
@@ -1644,6 +1648,7 @@ const HELP: &str = "JTokens: token usage and API cost for Claude Code, Codex, Op
   jtokens --check-update                 say whether a newer release is on GitHub
   jtokens --update [--no-launch]         install the newest release, then start it
   jtokens --toast-test                   show a test Windows notification
+  jtokens --limits                       check each provider's plan limits once
   jtokens --version                      print the version";
 
 thread_local! {
@@ -1670,7 +1675,7 @@ fn main() {
     let flag = |f: &str| args.iter().any(|a| a == f);
     // a flag's value is the next argument, unless that argument is another flag
     let value = |f: &str| args.iter().position(|a| a == f).and_then(|i| args.get(i + 1)).filter(|a| !a.starts_with("--")).cloned();
-    let quiet = flag("--serve") || flag("--smoke") || flag("--smoke-gui") || value("--export").is_some() || value("--json").is_some();
+    let quiet = flag("--serve") || flag("--smoke") || flag("--smoke-gui") || flag("--limits") || value("--export").is_some() || value("--json").is_some();
     if !quiet {
         std::panic::set_hook(Box::new(|info| if IN_SCAN.with(|c| c.get()) {
             // the page says "Scan failed"; keep the cause so it can be reported.
@@ -1708,6 +1713,11 @@ fn main() {
 
     if flag("--serve") {
         serve();
+        return;
+    }
+    if flag("--limits") {
+        attach_console();
+        limits::cli();
         return;
     }
     if flag("--toast-test") {
@@ -1795,6 +1805,7 @@ enum UserEvent {
     Rendered(String),
     Update(String),
     Alerts(String),
+    Limits(String),
     Fullscreen(bool),
     ScanFailed,
     Exit,
@@ -1846,6 +1857,7 @@ fn run_gui(smoke: bool, report: Option<String>) {
     if !smoke {
         let (h, sc, p) = (hub.clone(), scanner.clone(), proxy.clone());
         std::thread::spawn(move || alerts::watch(h, sc, p));
+        limits::watch(proxy.clone());
     }
     let busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let ipc_proxy = proxy.clone();
@@ -1901,6 +1913,8 @@ fn run_gui(smoke: bool, report: Option<String>) {
                 }
             } else if body == "alerts:get" {
                 let _ = ipc_proxy.send_event(UserEvent::Alerts(ipc_hub.json()));
+            } else if body == "limits:get" {
+                let _ = ipc_proxy.send_event(UserEvent::Limits(limits::json()));
             } else if let Some(cfg) = body.strip_prefix("alertcfg:") {
                 ipc_hub.set_from_json(cfg);
             } else if body == "alerttest" {
@@ -1959,6 +1973,9 @@ Details: {e}"
             }
             Event::UserEvent(UserEvent::Alerts(json)) => {
                 let _ = webview.evaluate_script(&format!("window.tkAlerts && window.tkAlerts({json});"));
+            }
+            Event::UserEvent(UserEvent::Limits(json)) => {
+                let _ = webview.evaluate_script(&format!("window.tkLimits && window.tkLimits({json});"));
             }
             Event::UserEvent(UserEvent::Exit) => *cf = ControlFlow::Exit,
             Event::UserEvent(UserEvent::Fullscreen(on)) => {

@@ -4,6 +4,10 @@
 
 **New**
 
+- Plan limits for Claude Code, Codex, OpenCode Go, Droid and Devin. A new Requests & plan limits card on the Overview shows requests over time as bars, with each tool's plan window use as lines (5 hour, day, week or month, whichever the tool reports). The legend shows the latest reading, or why a tool has none, for example not signed in or the sign-in expired.
+- Limits are checked every few minutes while JTokens runs and kept in limits.jsonl next to the other data files, so the lines build up history. The window updates live and exported pages carry the same readings.
+- `jtokens --limits` checks every provider once and prints the readings.
+- Droid limits read the encrypted sign-in the same way the Droid CLI does (the AES key from Windows Credential Manager) and refresh it before it expires.
 - JTokens alerts: a new Alerts tab. Set limits for API cost in an hour, tokens in an hour, and API cost in 24 hours. When usage crosses a limit JTokens shows a Windows notification, flashes the taskbar button, and logs it under Recent alerts. A fired alert stays quiet for a while and re-arms when usage falls back under half the limit. Limits live in settings.txt, and a limit of 0 turns that alert off.
 - Keep watching in the background rescans the logs every 30 seconds, even while the window is minimized.
 - Usage report on the Alerts tab: this hour and the last 24 hours, top days by cost and by tokens, the peak hour and busiest hours and weekday, and the biggest session. Copy report writes it as text. It uses all kept logs for the selected tool.

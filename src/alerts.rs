@@ -442,7 +442,7 @@ pub fn watch(hub: Arc<Hub>, scanner: Arc<Mutex<Scanner>>, proxy: EventLoopProxy<
             let (json, recent) = {
                 let mut sc = scanner.lock().unwrap_or_else(|e| e.into_inner());
                 let (files, st) = sc.scan();
-                let t = build_json(&files, &st);
+                let t = build_json(&mut sc.agg, &files, &st);
                 (t.json, t.recent)
             };
             let _ = proxy.send_event(UserEvent::Data(json));

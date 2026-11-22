@@ -7,13 +7,13 @@ mod update;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Instant, UNIX_EPOCH};
 
 // ---------------------------------------------------------------------------
@@ -109,6 +109,24 @@ fn str_field(buf: &[u8], key: &[u8]) -> Option<String> {
     (buf.get(i) == Some(&b'"')).then(|| json_str_at(buf, i + 1))
 }
 
+/// The string value for `key` equals `want`, with no allocation. Only plain
+/// unescaped values compare equal, which is all the role/model checks need.
+fn field_eq(buf: &[u8], key: &[u8], want: &[u8]) -> bool {
+    let Some(mut i) = find(buf, key) else { return false };
+    i += key.len();
+    while buf.get(i).is_some_and(u8::is_ascii_whitespace) {
+        i += 1;
+    }
+    if buf.get(i) != Some(&b':') {
+        return false;
+    }
+    i += 1;
+    while buf.get(i).is_some_and(u8::is_ascii_whitespace) {
+        i += 1;
+    }
+    buf.get(i) == Some(&b'"') && buf[i + 1..].starts_with(want) && buf.get(i + 1 + want.len()) == Some(&b'"')
+}
+
 /// The byte span of the `{...}` object value for `key` (`"metadata"`). Cheap to
 /// run on a huge row: the rest of the row never gets parsed as JSON.
 fn json_obj_span(buf: &[u8], key: &[u8]) -> Option<(usize, usize)> {
@@ -189,9 +207,20 @@ struct FileData {
     events: Vec<Event>,
 }
 
+/// A file opened with a sequential-scan hint, so Windows prefetches the big logs.
+fn open_seq(path: &Path) -> std::io::Result<fs::File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        return fs::OpenOptions::new().read(true).custom_flags(0x0800_0000 /* FILE_FLAG_SEQUENTIAL_SCAN */).open(path);
+    }
+    #[cfg(not(windows))]
+    fs::File::open(path)
+}
+
 fn read_padded(path: &Path, buf: &mut Vec<u8>) -> std::io::Result<()> {
     buf.clear();
-    let mut f = fs::File::open(path)?;
+    let mut f = open_seq(path)?;
     f.read_to_end(buf)?;
     buf.extend_from_slice(&[0u8; PAD]);
     Ok(())
@@ -229,12 +258,17 @@ fn key(parts: &[&[u8]]) -> u64 {
 // Pi: one JSON object per line. Assistant messages carry `usage` and a
 // millisecond `timestamp`; the header line carries the project `cwd`.
 #[derive(serde::Deserialize)]
-struct PiLine {
-    #[serde(rename = "type")]
-    kind: Option<String>,
-    id: Option<String>,
-    cwd: Option<String>,
-    name: Option<String>,
+struct PiLine<'a> {
+    // Cow borrows a plain string and owns one with escapes, so an escaped path
+    // still parses where a plain &str field would fail the whole line
+    #[serde(rename = "type", borrow)]
+    kind: Option<std::borrow::Cow<'a, str>>,
+    #[serde(borrow)]
+    id: Option<std::borrow::Cow<'a, str>>,
+    #[serde(borrow)]
+    cwd: Option<std::borrow::Cow<'a, str>>,
+    #[serde(borrow)]
+    name: Option<std::borrow::Cow<'a, str>>,
     message: Option<PiMsg>,
 }
 
@@ -259,7 +293,7 @@ struct PiUsage {
 
 fn parse_pi(path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u8>) -> Option<FileData> {
     buf.clear();
-    fs::File::open(path).ok()?.read_to_end(buf).ok()?;
+    open_seq(path).ok()?.read_to_end(buf).ok()?;
     let mut fd = FileData { src: Src::Pi, size, mtime, session, cwd: String::new(), title: String::new(), models: Vec::new(), events: Vec::new() };
     for line in buf.split(|&c| c == b'\n') {
         // skip the big lines that cannot hold usage or the header/title before parsing them
@@ -269,10 +303,10 @@ fn parse_pi(path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u
         }
         let Ok(v) = serde_json::from_slice::<PiLine>(line) else { continue };
         match v.kind.as_deref() {
-            Some("session") => fd.cwd = v.cwd.unwrap_or_default(),
+            Some("session") => fd.cwd = v.cwd.as_deref().unwrap_or_default().to_string(),
             Some("session_info") => {
-                if let Some(n) = v.name.filter(|n| !n.is_empty()) {
-                    fd.title = n; // the last name wins, like Claude's ai-title
+                if let Some(n) = v.name.as_deref().filter(|n| !n.is_empty()) {
+                    fd.title = n.to_string(); // the last name wins, like Claude's ai-title
                 }
             }
             Some("message") => {
@@ -386,7 +420,7 @@ struct QwenUsage {
 
 fn parse_qwen(path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u8>) -> Option<FileData> {
     buf.clear();
-    fs::File::open(path).ok()?.read_to_end(buf).ok()?;
+    open_seq(path).ok()?.read_to_end(buf).ok()?;
     let mut fd = FileData { src: Src::Qwen, size, mtime, session, cwd: String::new(), title: String::new(), models: Vec::new(), events: Vec::new() };
     // a count that is not a number reads as 0; infinite counts are dropped; negative counts and NaN become 0; huge ones are capped
     let whole = |x: &Option<serde_json::Value>| x.as_ref().and_then(|v| v.as_f64()).filter(|f| f.is_finite()).map_or(0, |f| f.clamp(0.0, 1e12) as u64);
@@ -436,17 +470,6 @@ fn iso_seconds(s: &str) -> Option<u64> {
     u64::try_from(days * 86_400 + h * 3_600 + mi * 60 + se).ok()
 }
 
-// A stored value as text, whatever its type; None for NULL or binary data.
-fn stored_text(v: rusqlite::types::Value) -> Option<String> {
-    use rusqlite::types::Value;
-    match v {
-        Value::Text(s) => Some(s),
-        Value::Integer(i) => Some(i.to_string()),
-        Value::Real(f) => Some(f.to_string()),
-        _ => None,
-    }
-}
-
 // A stored value as a whole time; None when it is not a time.
 fn stored_time(v: rusqlite::types::Value) -> Option<i64> {
     use rusqlite::types::Value;
@@ -458,91 +481,57 @@ fn stored_time(v: rusqlite::types::Value) -> Option<i64> {
     }
 }
 
-// OpenCode keeps everything in one SQLite database. Read it whole (it is small
-// next to the logs) and group the assistant messages by session.
-// None when the database cannot be read right now (locked, busy, schema changed): the
-// caller keeps its last numbers and tries again on the next scan.
-fn scan_opencode(db: &Path) -> Option<Vec<Arc<FileData>>> {
+// OpenCode keeps everything in one SQLite database; the assistant rows carry a
+// `tokens` object. Reasoning is billed as output.
+fn oc_range(db: &Path, lo: i64, hi: i64) -> Option<Vec<(i64, DbRow)>> {
     use rusqlite::types::Value;
     use rusqlite::{Connection, OpenFlags};
     let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX).ok()?;
     let _ = conn.busy_timeout(std::time::Duration::from_secs(2));
+    let _ = conn.pragma_update(None, "mmap_size", 4_000_000_000i64);
     let mut stmt = conn
         .prepare(
-            "SELECT m.id, m.session_id, m.time_created, m.data, s.directory, s.title \
-             FROM message m JOIN session s ON s.id = m.session_id \
-             WHERE m.data LIKE '%\"tokens\"%' ORDER BY m.time_created",
+            "SELECT m.rowid, m.id, m.session_id, m.time_created, m.data \
+             FROM message m \
+             WHERE m.rowid >= ?1 AND m.rowid < ?2 AND m.data LIKE '%\"tokens\"%' ORDER BY m.rowid",
         )
         .ok()?;
-    let rows = stmt
-        .query_map([], |r| {
-            // every column is read as it is stored, so a value of an odd type is skipped below, not fatal
-            Ok((r.get::<_, Value>(0)?, r.get::<_, Value>(1)?, r.get::<_, Value>(2)?, r.get::<_, Value>(3)?, r.get::<_, Value>(4)?, r.get::<_, Value>(5)?))
-        })
-        .ok()?;
-    // only a failed read (locked, busy, damaged) is fatal: the caller keeps the last numbers and retries
-    let rows: Vec<_> = rows.collect::<Result<Vec<_>, _>>().ok()?;
-    let mut by: HashMap<String, FileData> = HashMap::new();
-    let mut order: Vec<String> = Vec::new();
-    for (mid, sid, created, data, dir, title) in rows {
-        let (Some(mid), Some(sid), Some(data), Some(created)) = (stored_text(mid), stored_text(sid), stored_text(data), stored_time(created)) else { continue };
-        let (dir, title) = (stored_text(dir), stored_text(title));
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) else { continue };
-        if v.get("role").and_then(|x| x.as_str()) != Some("assistant") {
+    let mut rows = stmt.query([lo, hi]).ok()?;
+    let mut out = Vec::new();
+    loop {
+        // a failed read (locked, busy, damaged) is fatal: the caller keeps the last numbers
+        let r = match rows.next() {
+            Ok(Some(r)) => r,
+            Ok(None) => break,
+            Err(_) => return None,
+        };
+        let Ok(rid) = r.get::<_, i64>(0) else { continue };
+        let Ok(mid) = r.get::<_, String>(1) else { continue };
+        let Ok(sid) = r.get::<_, String>(2) else { continue };
+        let Some(created) = r.get::<_, Value>(3).ok().and_then(stored_time) else { continue };
+        let Ok(data) = r.get_ref(4) else { continue };
+        let cb = match data {
+            rusqlite::types::ValueRef::Text(b) | rusqlite::types::ValueRef::Blob(b) => b,
+            _ => continue,
+        };
+        if !field_eq(cb, b"\"role\"", b"assistant") {
             continue;
         }
-        // a fraction or a negative count is cut to a whole, non-negative count instead of becoming 0
+        // only the small tokens object is parsed; the rest of the message is not
+        let Some((a, b)) = json_obj_span(cb, b"\"tokens\"") else { continue };
+        let Ok(tok) = serde_json::from_slice::<serde_json::Value>(&cb[a..b]) else { continue };
         // counts may be numbers or numeric text; infinite values are dropped and huge ones capped
-        let num = |p: &str| {
-            v.pointer(p)
-                .and_then(|x| {
-                    x.as_u64().map(|u| u.min(1_000_000_000_000)).or_else(|| {
-                        x.as_f64()
-                            .or_else(|| x.as_str().and_then(|s| s.trim().parse::<f64>().ok()))
-                            .filter(|f| f.is_finite())
-                            .map(|f| f.clamp(0.0, 1e12) as u64)
-                    })
-                })
-                .unwrap_or(0)
-        };
-        let (input, output, reasoning) = (num("/tokens/input"), num("/tokens/output"), num("/tokens/reasoning"));
-        let (cache_read, cache_write) = (num("/tokens/cache/read"), num("/tokens/cache/write"));
+        let (input, output, reasoning) = (json_count(tok.get("input")), json_count(tok.get("output")), json_count(tok.get("reasoning")));
+        let (cache_read, cache_write) = (json_count(tok.pointer("/cache/read")), json_count(tok.pointer("/cache/write")));
         if input + output + reasoning + cache_read + cache_write == 0 {
             continue;
         }
-        let model = v.get("modelID").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).unwrap_or("unknown");
-        if !by.contains_key(&sid) {
-            order.push(sid.clone());
-            by.insert(
-                sid.clone(),
-                FileData {
-                    src: Src::OpenCode,
-                    size: 0,
-                    mtime: 0,
-                    session: sid.clone(),
-                    cwd: dir.unwrap_or_default().replace('/', "\\"),
-                    title: title.unwrap_or_default(),
-                    models: Vec::new(),
-                    events: Vec::new(),
-                },
-            );
-        }
-        let fd = by.get_mut(&sid).expect("inserted above");
-        let model = intern(&mut fd.models, model.as_bytes());
+        let model = str_field(cb, b"\"modelID\"").filter(|s| !s.is_empty()).unwrap_or_else(|| "unknown".to_string());
+        let id = key(&[mid.as_bytes()]);
         // OpenCode lists reasoning apart from output; both are billed as output
-        fd.events.push(Event {
-            ts: (created / 1000) as u32,
-            model,
-            input,
-            output: output + reasoning,
-            cache_read,
-            cache_w5m: cache_write,
-            cache_w1h: 0,
-            id: key(&[mid.as_bytes()]),
-            fast: false,
-        });
+        out.push((rid, DbRow { sid, secs: created / 1000, model, fast: false, input, output: output + reasoning, cache_read, cache_write, id }));
     }
-    Some(order.into_iter().filter_map(|s| by.remove(&s)).map(Arc::new).collect())
+    Some(out)
 }
 
 // A count of any JSON type: a number, numeric text, or nothing. Fractions and negative
@@ -560,11 +549,12 @@ fn json_count(x: Option<&serde_json::Value>) -> u64 {
 // carries its usage in chat_message.metadata.metrics. Input is the part that was not cached,
 // cache_read_tokens and cache_creation_tokens are the cached parts (the same reading the
 // Devin token dashboard uses). The database is big and changes all the time, so parsed rows
-// are kept in DvScan and a rescan reads only the new tail. None when the read fails; the
+// are kept in DbScan and a rescan reads only the new tail. None when the read fails; the
 // caller keeps its last numbers.
 
-/// One Devin usage row, kept so a rescan only has to read new rows.
-struct DvRow {
+/// One Devin usage row, kept so a rescan only has to read new rows. `id` is the
+/// event's dedupe key, made once here instead of on every regroup.
+struct DbRow {
     sid: String,
     secs: i64,
     model: String,
@@ -573,59 +563,71 @@ struct DvRow {
     output: u64,
     cache_read: u64,
     cache_write: u64,
+    id: u64,
 }
 
 #[derive(Default)]
-struct DvScan {
+struct DbScan {
     sig: Option<(u64, u64, u64, u64)>,
     /// the largest row_id scanned
     max: i64,
-    /// parsed rows by rowid; iterating it walks rows in ORDER BY row_id order
-    rows: BTreeMap<i64, DvRow>,
-    /// session id -> (working directory, title), last seen wins
+    /// parsed rows by row_id; iterating it walks rows in ORDER BY row_id order
+    rows: BTreeMap<i64, DbRow>,
+    /// session id -> its row_ids in order; kept so a regroup can touch one session
+    by_sid: HashMap<String, Vec<i64>>,
+    /// session id -> (working directory, title); the small sessions table is
+    /// re-read whole each scan instead of joining it onto every message row
     sessions: HashMap<String, (String, String)>,
+    /// the last FileData built per session; rebuilt only for sessions in `touched`
+    file_by_sid: HashMap<String, Arc<FileData>>,
+    /// sessions whose rows or directory/title changed since the last regroup
+    touched: HashSet<String>,
     files: Vec<Arc<FileData>>,
     /// last time every row was read; hourly, in case old rows were edited or deleted
     last_full: Option<Instant>,
 }
 
-/// A rescan re-reads back to max - DV_TAIL, which catches chat_message rows edited after insert.
-const DV_TAIL: i64 = 1000;
+/// A rescan re-reads back to max - DB_TAIL, which catches rows edited after insert.
+const DB_TAIL: i64 = 1000;
 
-fn scan_devin(db: &Path, st: &mut DvScan) -> Option<()> {
+/// Reads [lo, hi) row_ids of Devin's message_nodes into kept rows. The big
+/// chat_message blob is borrowed per row, never copied into a String. A failed
+/// read (locked, busy, damaged) is fatal: the caller keeps the last numbers.
+fn devin_range(db: &Path, lo: i64, hi: i64) -> Option<Vec<(i64, DbRow)>> {
     use rusqlite::types::Value;
     use rusqlite::{Connection, OpenFlags};
     let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX).ok()?;
     let _ = conn.busy_timeout(std::time::Duration::from_secs(2));
-    let full = st.last_full.map_or(true, |t| t.elapsed().as_secs() > 3600);
-    let tail = if full { 0 } else { (st.max - DV_TAIL).max(0) };
+    let _ = conn.pragma_update(None, "mmap_size", 4_000_000_000i64);
     let mut stmt = conn
         .prepare(
-            "SELECT m.row_id, m.session_id, m.created_at, m.chat_message, s.working_directory, s.title \
-             FROM message_nodes m LEFT JOIN sessions s ON s.id = m.session_id \
-             WHERE m.row_id >= ?1 AND m.chat_message LIKE '%cache_read_tokens%' ORDER BY m.row_id",
+            "SELECT m.row_id, m.session_id, m.created_at, m.chat_message \
+             FROM message_nodes m \
+             WHERE m.row_id >= ?1 AND m.row_id < ?2 AND m.chat_message LIKE '%cache_read_tokens%' ORDER BY m.row_id",
         )
         .ok()?;
-    let mut rows = stmt.query([tail]).ok()?;
-    let mut got: Vec<(i64, DvRow, String, String)> = Vec::new();
+    let mut rows = stmt.query([lo, hi]).ok()?;
+    let mut out = Vec::new();
     loop {
-        // a failed read (locked, busy, damaged) is fatal: the caller keeps the last numbers
         let r = match rows.next() {
             Ok(Some(r)) => r,
             Ok(None) => break,
             Err(_) => return None,
         };
-        let (Ok(rid), Ok(sid), Ok(created), Ok(chat), Ok(dir), Ok(title)) =
-            (r.get::<_, Value>(0), r.get::<_, Value>(1), r.get::<_, Value>(2), r.get::<_, Value>(3), r.get::<_, Value>(4), r.get::<_, Value>(5)) else { continue };
-        let (Some(rid), Some(sid), Some(chat), Some(created)) = (stored_text(rid), stored_text(sid), stored_text(chat), stored_time(created)) else { continue };
-        let (dir, title) = (stored_text(dir).unwrap_or_default(), stored_text(title).unwrap_or_default());
-        let cb = chat.as_bytes();
-        if str_field(cb, b"\"role\"").as_deref() != Some("assistant") {
+        let Ok(rid) = r.get::<_, i64>(0) else { continue };
+        let Ok(sid) = r.get::<_, String>(1) else { continue };
+        let Some(created) = r.get::<_, Value>(2).ok().and_then(stored_time) else { continue };
+        let Ok(chat) = r.get_ref(3) else { continue };
+        let cb = match chat {
+            rusqlite::types::ValueRef::Text(b) | rusqlite::types::ValueRef::Blob(b) => b,
+            _ => continue,
+        };
+        if !field_eq(cb, b"\"role\"", b"assistant") {
             continue;
         }
         // metrics sits in the small metadata object; the rest of the row is not parsed
         let Some((a, b)) = json_obj_span(cb, b"\"metadata\"") else { continue };
-        let Ok(md) = serde_json::from_str::<serde_json::Value>(&chat[a..b]) else { continue };
+        let Ok(md) = serde_json::from_slice::<serde_json::Value>(&cb[a..b]) else { continue };
         let Some(metrics) = md.get("metrics") else { continue };
         let (input, output) = (json_count(metrics.get("input_tokens")), json_count(metrics.get("output_tokens")));
         let (cache_read, cache_write) = (json_count(metrics.get("cache_read_tokens")), json_count(metrics.get("cache_creation_tokens")));
@@ -638,71 +640,186 @@ fn scan_devin(db: &Path, st: &mut DvScan) -> Option<()> {
         let fast = lower.ends_with("-fast") || lower.ends_with("-lightning");
         // created_at is milliseconds in current databases; a value that small is already seconds
         let secs = if created > 1_000_000_000_000 { created / 1000 } else { created };
-        let Ok(rid) = rid.parse::<i64>() else { continue };
-        got.push((
-            rid,
-            DvRow { sid, secs, model: model.to_string(), fast, input, output, cache_read, cache_write },
-            dir.replace('/', "\\"),
-            title,
-        ));
+        let id = key(&[sid.as_bytes(), &rid.to_le_bytes()]);
+        out.push((rid, DbRow { sid, secs, model: model.to_string(), fast, input, output, cache_read, cache_write, id }));
     }
+    Some(out)
+}
+
+/// The sessions table is small; it is read whole once per scan instead of being
+/// joined onto every message row.
+fn db_sessions(conn: &rusqlite::Connection, table: &str, dir_col: &str) -> Option<HashMap<String, (String, String)>> {
+    let mut stmt = conn.prepare(&format!("SELECT id, {dir_col}, title FROM {table}")).ok()?;
+    let mut rows = stmt.query([]).ok()?;
+    let mut out = HashMap::new();
+    loop {
+        let r = match rows.next() {
+            Ok(Some(r)) => r,
+            Ok(None) => break,
+            Err(_) => return None,
+        };
+        let Ok(sid) = r.get::<_, String>(0) else { continue };
+        let dir = r.get::<_, String>(1).unwrap_or_default().replace('/', "\\");
+        let title = r.get::<_, String>(2).unwrap_or_default();
+        out.insert(sid, (dir, title));
+    }
+    Some(out)
+}
+
+fn scan_db(db: &Path, st: &mut DbScan, src: Src, range: fn(&Path, i64, i64) -> Option<Vec<(i64, DbRow)>>, table: &str, dir_col: &str, rowid_col: &str, msg_table: &str) -> Option<()> {
+    use rusqlite::{Connection, OpenFlags};
+    let conn = Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX).ok()?;
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(2));
+    let _ = conn.pragma_update(None, "mmap_size", 4_000_000_000i64);
+    let sessions = db_sessions(&conn, table, dir_col)?;
+    let full = st.last_full.map_or(true, |t| t.elapsed().as_secs() > 3600);
+    let tail = if full { 0 } else { (st.max - DB_TAIL).max(0) };
+    // an empty table gives NULL, which is a valid empty read, not a failure
+    let hi = match conn.query_row(&format!("SELECT COALESCE(MAX({rowid_col}), 0) FROM {msg_table}"), [], |r| r.get::<_, i64>(0)) {
+        Ok(m) => m + 1,
+        Err(_) => return None,
+    };
+    // A full read splits the row_id space over several connections; each parses
+    // its own range, so the one big scan is not a single starved thread.
+    let range_workers = if full { std::thread::available_parallelism().map(|n| n.get() / 4).unwrap_or(4).clamp(2, 8) } else { 1 };
+    let got: Vec<(i64, DbRow)> = if range_workers > 1 {
+        let span = (hi - tail).max(0);
+        let step = ((span + range_workers as i64 - 1) / range_workers as i64).max(1);
+        let parts: Mutex<Vec<Vec<(i64, DbRow)>>> = Mutex::new(Vec::new());
+        let failed = std::sync::atomic::AtomicBool::new(false);
+        let (parts_ref, failed_ref) = (&parts, &failed);
+        std::thread::scope(|s| {
+            for k in 0..range_workers {
+                let (lo, hi) = (tail + step * k as i64, (tail + step * (k as i64 + 1)).min(hi));
+                if lo >= hi {
+                    break;
+                }
+                s.spawn(move || {
+                    IN_SCAN.with(|c| c.set(true));
+                    match range(db, lo, hi) {
+                        Some(v) => parts_ref.lock().unwrap().push(v),
+                        None => {
+                            failed_ref.store(true, Ordering::Relaxed);
+                        }
+                    }
+                });
+            }
+        });
+        // a failed read is fatal: the caller keeps the last numbers
+        if failed.load(Ordering::Relaxed) {
+            return None;
+        }
+        let mut parts = parts.into_inner().unwrap();
+        // ranges come back out of order; every range is contiguous, so sorting the
+        // first row_id of each restores ORDER BY row_id for the merge below
+        parts.sort_by_key(|v| v.first().map(|(rid, _)| *rid).unwrap_or(i64::MAX));
+        let mut got = Vec::new();
+        for v in parts {
+            got.extend(v);
+        }
+        got
+    } else {
+        range(db, tail, hi)?
+    };
     // the read worked: drop the overlap window and put back its fresh copies
     if tail > 0 {
+        for (_, r) in st.rows.range(tail..) {
+            if let Some(v) = st.by_sid.get_mut(&r.sid) {
+                v.retain(|rid| *rid < tail);
+            }
+            st.touched.insert(r.sid.clone());
+        }
         st.rows.split_off(&tail);
+        st.by_sid.retain(|_, v| !v.is_empty());
     } else {
         st.rows.clear();
+        st.by_sid.clear();
+        st.file_by_sid.clear();
+        st.touched.clear();
         st.sessions.clear();
     }
-    for (rid, row, dir, title) in got {
+    // a changed directory/title regroups that session even without new usage rows
+    for (sid, meta) in &sessions {
+        if st.sessions.get(sid) != Some(meta) {
+            st.touched.insert(sid.clone());
+        }
+    }
+    st.sessions = sessions;
+    for (rid, row) in got {
         st.max = st.max.max(rid);
-        st.sessions.insert(row.sid.clone(), (dir, title));
+        st.touched.insert(row.sid.clone());
+        st.by_sid.entry(row.sid.clone()).or_default().push(rid);
         st.rows.insert(rid, row);
     }
     if full {
         st.last_full = Some(Instant::now());
     }
-    st.files = dv_rebuild(st);
+    db_rebuild(st, src);
     Some(())
 }
 
-/// Groups the kept Devin rows into one FileData per session, in row_id order.
-fn dv_rebuild(st: &DvScan) -> Vec<Arc<FileData>> {
-    let mut by: HashMap<String, usize> = HashMap::new();
-    let mut out: Vec<FileData> = Vec::new();
-    for (rid, r) in &st.rows {
-        let i = match by.get(&r.sid) {
-            Some(&i) => i,
-            None => {
-                let (dir, title) = st.sessions.get(&r.sid).cloned().unwrap_or_default();
-                out.push(FileData {
-                    src: Src::Devin,
-                    size: 0,
-                    mtime: 0,
-                    session: r.sid.clone(),
-                    cwd: dir,
-                    title,
-                    models: Vec::new(),
-                    events: Vec::new(),
-                });
-                by.insert(r.sid.clone(), out.len() - 1);
-                out.len() - 1
-            }
-        };
-        let fd = &mut out[i];
-        let model = intern(&mut fd.models, r.model.as_bytes());
-        fd.events.push(Event {
-            ts: r.secs as u32,
-            model,
-            input: r.input,
-            output: r.output,
-            cache_read: r.cache_read,
-            cache_w5m: r.cache_write,
-            cache_w1h: 0,
-            id: key(&[r.sid.as_bytes(), rid.to_string().as_bytes()]),
-            fast: r.fast,
-        });
+// Devin CLI keeps its sessions in one SQLite database. Each assistant reply in message_nodes
+// carries its usage in chat_message.metadata.metrics. Input is the part that was not cached,
+// cache_read_tokens and cache_creation_tokens are the cached parts (the same reading the
+// Devin token dashboard uses).
+fn scan_devin(db: &Path, st: &mut DbScan) -> Option<()> {
+    scan_db(db, st, Src::Devin, devin_range, "sessions", "working_directory", "row_id", "message_nodes")
+}
+
+fn scan_opencode(db: &Path, st: &mut DbScan) -> Option<()> {
+    scan_db(db, st, Src::OpenCode, oc_range, "session", "directory", "rowid", "message")
+}
+
+/// Regroups the kept rows into one FileData per session. Only sessions in
+/// `touched` are rebuilt; the rest reuse their last FileData.
+fn db_rebuild(st: &mut DbScan, src: Src) {
+    let group = |st: &DbScan, sid: &str, rids: &[i64]| -> FileData {
+        let (dir, title) = st.sessions.get(sid).cloned().unwrap_or_default();
+        let mut fd = FileData { src, size: 0, mtime: 0, session: sid.to_string(), cwd: dir, title, models: Vec::new(), events: Vec::new() };
+        for rid in rids {
+            let r = &st.rows[rid];
+            let model = intern(&mut fd.models, r.model.as_bytes());
+            fd.events.push(Event {
+                ts: r.secs as u32,
+                model,
+                input: r.input,
+                output: r.output,
+                cache_read: r.cache_read,
+                cache_w5m: r.cache_write,
+                cache_w1h: 0,
+                id: r.id,
+                fast: r.fast,
+            });
+        }
+        fd
+    };
+    if st.file_by_sid.is_empty() {
+        // cold build: group every session in row_id order
+        for sid in st.by_sid.keys() {
+            st.touched.insert(sid.clone());
+        }
     }
-    out.into_iter().map(Arc::new).collect()
+    for sid in std::mem::take(&mut st.touched) {
+        match st.by_sid.get(&sid) {
+            Some(rids) if !rids.is_empty() => {
+                let fd = group(st, &sid, rids);
+                st.file_by_sid.insert(sid, Arc::new(fd));
+            }
+            _ => {
+                st.file_by_sid.remove(&sid);
+            }
+        }
+    }
+    // sessions keep the order their first row_id appeared in
+    let mut files: Vec<Arc<FileData>> = Vec::with_capacity(st.file_by_sid.len());
+    let mut order: Vec<(&String, i64)> = st.by_sid.iter().filter_map(|(sid, rids)| rids.first().map(|r| (sid, *r))).collect();
+    order.sort_by_key(|(_, r)| *r);
+    for (sid, _) in order {
+        if let Some(fd) = st.file_by_sid.get(sid) {
+            files.push(fd.clone());
+        }
+    }
+    st.files = files;
 }
 
 fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u8>, recs: &mut Vec<Rec>) -> Option<FileData> {
@@ -736,12 +853,24 @@ fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf
     };
     fd.cwd = str_after(data, b"\"cwd\":\"", 1 << 20).unwrap_or_default();
     if src == Src::Claude {
-        // last ai-title wins; it is rewritten as the session evolves
+        // last ai-title wins; it is rewritten as the session evolves. The last one
+        // sits near the end of the file, so only the tail is searched first; a file
+        // with no title there gets the full pass instead.
         let key = b"\"aiTitle\":\"";
-        let mut at = 0;
+        let from = len.saturating_sub(8 << 20);
+        let mut found = false;
+        let mut at = from;
         while let Some(i) = find(&data[at..], key) {
             fd.title = json_str_at(data, at + i + key.len());
             at += i + key.len();
+            found = true;
+        }
+        if !found && from > 0 {
+            let mut at = 0;
+            while let Some(i) = find(&data[at..from], key) {
+                fd.title = json_str_at(data, at + i + key.len());
+                at += i + key.len();
+            }
         }
     }
 
@@ -814,7 +943,6 @@ fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf
 struct Job {
     src: Src,
     path: PathBuf,
-    session: String,
     size: u64,
     mtime: u64,
 }
@@ -823,74 +951,71 @@ struct Job {
 /// directory listing itself, so no extra file open per entry.
 fn is_log(p: &Path, suffix: &str) -> bool {
     // Windows file names are not case-sensitive: *.JSONL is a log too
-    p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.to_ascii_lowercase().ends_with(&suffix.to_ascii_lowercase()))
+    let Some(n) = p.file_name().and_then(|n| n.to_str()) else { return false };
+    let (b, s) = (n.as_bytes(), suffix.as_bytes());
+    b.len() >= s.len() && b[b.len() - s.len()..].eq_ignore_ascii_case(s)
 }
 
-fn walk(dir: &Path, suffix: &str, out: &mut Vec<(PathBuf, u64, u64)>) {
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    for e in rd.flatten() {
-        let Ok(md) = e.metadata() else { continue };
-        let p = e.path();
-        if md.is_dir() {
-            walk(&p, suffix, out);
-        } else if is_log(&p, suffix) {
-            let mtime = md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0);
-            out.push((p, md.len(), mtime));
-        }
-    }
-}
-
-/// Walks each second-level directory on its own thread (Codex keeps one
-/// folder per day, Claude one per project).
-fn walk_parallel(root: &Path, suffix: &str) -> Vec<(PathBuf, u64, u64)> {
-    let mut out = Vec::new();
-    let mut dirs = Vec::new();
-    let Ok(rd) = fs::read_dir(root) else { return out };
-    for e in rd.flatten() {
-        let Ok(md) = e.metadata() else { continue };
-        let p = e.path();
-        if md.is_dir() {
-            match fs::read_dir(&p) {
-                Ok(rd2) => {
-                    for e2 in rd2.flatten() {
-                        let Ok(md2) = e2.metadata() else { continue };
-                        let p2 = e2.path();
-                        if md2.is_dir() {
-                            dirs.push(p2);
-                        } else if is_log(&p2, suffix) {
-                            let mt = md2.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0);
-                            out.push((p2, md2.len(), mt));
-                        }
-                    }
-                }
-                Err(_) => continue,
-            }
-        } else if is_log(&p, suffix) {
-            let mt = md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0);
-            out.push((p, md.len(), mt));
-        }
-    }
-    let next = AtomicUsize::new(0);
+/// Collects (src, path, size, mtime) for every log under the roots. All roots share
+/// one work queue and each directory is one item on it, so a big first level (Claude
+/// keeps one folder per project) spreads over the pool instead of being enumerated
+/// on the calling thread before the pool starts.
+/// On Windows DirEntry metadata comes from the directory listing itself, so no
+/// extra file open per entry.
+fn walk_all(roots: &[(Src, PathBuf, &'static str)]) -> Vec<(Src, PathBuf, u64, u64)> {
+    let mt = |md: &fs::Metadata| md.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_nanos() as u64).unwrap_or(0);
+    let queue: Mutex<VecDeque<(Src, PathBuf, &'static str)>> = Mutex::new(roots.iter().map(|&(s, ref d, x)| (s, d.clone(), x)).collect());
+    // directories queued plus being read; when it reaches zero the walk is done
+    let pending = AtomicUsize::new(queue.lock().unwrap().len());
+    let idle = Condvar::new();
     let found = Mutex::new(Vec::new());
-    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(16);
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(16).min(roots.len().max(1));
     std::thread::scope(|s| {
         for _ in 0..threads {
             s.spawn(|| {
                 IN_SCAN.with(|c| c.set(true)); // a panic here is caught by the scan, not shown in a box
                 let mut local = Vec::new();
                 loop {
-                    let k = next.fetch_add(1, Ordering::Relaxed);
-                    if k >= dirs.len() {
-                        break;
+                    let item = {
+                        let mut q = queue.lock().unwrap();
+                        loop {
+                            if let Some(item) = q.pop_front() {
+                                break Some(item);
+                            }
+                            if pending.load(Ordering::Relaxed) == 0 {
+                                break None;
+                            }
+                            let (g, _) = idle.wait_timeout(q, std::time::Duration::from_millis(20)).unwrap();
+                            q = g;
+                        }
+                    };
+                    let Some((src, dir, suffix)) = item else { break };
+                    if let Ok(rd) = fs::read_dir(&dir) {
+                        let mut subs = Vec::new();
+                        for e in rd.flatten() {
+                            let Ok(md) = e.metadata() else { continue };
+                            let p = e.path();
+                            if md.is_dir() {
+                                subs.push((src, p, suffix));
+                            } else if is_log(&p, suffix) {
+                                local.push((src, p, md.len(), mt(&md)));
+                            }
+                        }
+                        if !subs.is_empty() {
+                            pending.fetch_add(subs.len(), Ordering::Relaxed);
+                            queue.lock().unwrap().extend(subs);
+                            idle.notify_all();
+                        }
                     }
-                    walk(&dirs[k], suffix, &mut local);
+                    if pending.fetch_sub(1, Ordering::Relaxed) == 1 {
+                        idle.notify_all();
+                    }
                 }
                 found.lock().unwrap().extend(local);
             });
         }
     });
-    out.extend(found.into_inner().unwrap());
-    out
+    found.into_inner().unwrap()
 }
 
 fn home() -> PathBuf {
@@ -948,11 +1073,12 @@ struct ScanStats {
 #[derive(Default)]
 struct Scanner {
     cache: HashMap<PathBuf, Arc<FileData>>,
-    /// OpenCode's database signature and the sessions read from it last time
-    oc_sig: Option<(u64, u64, u64, u64)>,
-    oc_files: Vec<Arc<FileData>>,
+    /// OpenCode's incremental database state
+    oc: DbScan,
     /// Devin's incremental database state
-    dv: DvScan,
+    dv: DbScan,
+    /// the last aggregation emitted, reused while no file changed
+    agg: AggCache,
 }
 
 impl Scanner {
@@ -966,31 +1092,10 @@ impl Scanner {
         let qwen_dir = h.join(".qwen").join("projects");
         let oc_db = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| h.join(".local").join("share")).join("opencode").join("opencode.db");
         let mut stats = ScanStats::default();
-        let mut jobs = Vec::new();
-        for (src, dir, suffix) in [
-            (Src::Claude, claude_dir.join("projects"), ".jsonl"),
-            (Src::Codex, codex_dir.join("sessions"), ".jsonl"),
-            (Src::Codex, codex_dir.join("archived_sessions"), ".jsonl"),
-            (Src::Pi, pi_dir, ".jsonl"),
-            (Src::Droid, droid_dir, ".settings.json"),
-            (Src::Qwen, qwen_dir, ".jsonl"),
-        ] {
-            let tw = Instant::now();
-            let paths = walk_parallel(&dir, suffix);
-            stats.walk_ms += tw.elapsed().as_secs_f64() * 1000.0;
-            for (p, size, mtime) in paths {
-                let session = match src {
-                    Src::Claude => claude_session(&p),
-                    Src::Droid => droid_session(&p),
-                    _ => codex_session(&p), // Codex and Pi: the 36 character session id ends the file name
-                };
-                jobs.push(Job { src, path: p, session, size, mtime });
-            }
-        }
 
         // OpenCode: one database. Re-read it only when the database or its write-ahead log changed.
-        // Devin: the same rule for its sessions database. Both readers run on their own threads,
-        // next to the log parse below, so a big database does not add to the scan's wall time.
+        // Devin: the same rule for its sessions database. Both readers start before the
+        // directory walk so their work overlaps the walk and the log parse below.
         let (db_len, db_mt) = file_sig(&oc_db);
         let (wal_len, wal_mt) = file_sig(&oc_db.with_extension("db-wal"));
         let sig = (db_len, db_mt, wal_len, wal_mt);
@@ -998,14 +1103,30 @@ impl Scanner {
         let (dv_len, dv_mt) = file_sig(&devin_db);
         let (dvw_len, dvw_mt) = file_sig(&devin_db.with_extension("db-wal"));
         let dsig = (dv_len, dv_mt, dvw_len, dvw_mt);
-        let oc_t = (self.oc_sig != Some(sig)).then(|| {
+        let oc_t = (self.oc.sig != Some(sig)).then(|| {
             let db = oc_db.clone();
+            let mut oc = std::mem::take(&mut self.oc);
             std::thread::spawn(move || {
                 IN_SCAN.with(|c| c.set(true));
                 let t = Instant::now();
                 // a database that cannot be read now keeps the last numbers, and is tried again on the next scan
-                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| if db_len == 0 { Some(Vec::new()) } else { scan_opencode(&db) }));
-                (r.unwrap_or_default(), t.elapsed())
+                let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if db_len == 0 {
+                        oc.rows.clear();
+                        oc.sessions.clear();
+                        oc.by_sid.clear();
+                        oc.file_by_sid.clear();
+                        oc.touched.clear();
+                        oc.max = 0;
+                        oc.files = Vec::new();
+                        Some(())
+                    } else {
+                        scan_opencode(&db, &mut oc)
+                    }
+                }))
+                .unwrap_or_default()
+                .is_some();
+                (oc, ok, t.elapsed())
             })
         });
         let dv_t = (self.dv.sig != Some(dsig)).then(|| {
@@ -1018,6 +1139,9 @@ impl Scanner {
                     if dv_len == 0 {
                         dv.rows.clear();
                         dv.sessions.clear();
+                        dv.by_sid.clear();
+                        dv.file_by_sid.clear();
+                        dv.touched.clear();
                         dv.max = 0;
                         dv.files = Vec::new();
                         Some(())
@@ -1030,6 +1154,23 @@ impl Scanner {
                 (dv, ok, t.elapsed())
             })
         });
+
+        // one queue for every root: the walk is fully parallel and starts while the
+        // database threads above are already reading
+        let tw = Instant::now();
+        let paths = walk_all(&[
+            (Src::Claude, claude_dir.join("projects"), ".jsonl"),
+            (Src::Codex, codex_dir.join("sessions"), ".jsonl"),
+            (Src::Codex, codex_dir.join("archived_sessions"), ".jsonl"),
+            (Src::Pi, pi_dir, ".jsonl"),
+            (Src::Droid, droid_dir, ".settings.json"),
+            (Src::Qwen, qwen_dir, ".jsonl"),
+        ]);
+        stats.walk_ms += tw.elapsed().as_secs_f64() * 1000.0;
+        let mut jobs = Vec::with_capacity(paths.len());
+        for (src, p, size, mtime) in paths {
+            jobs.push(Job { src, path: p, size, mtime });
+        }
 
         // the OpenCode and Devin databases count as one file each, however many sessions they hold
         stats.files = jobs.len() + usize::from(db_len > 0) + usize::from(dv_len > 0);
@@ -1048,33 +1189,41 @@ impl Scanner {
         stats.parsed_bytes = todo.iter().map(|&i| jobs[i].size).sum();
 
         let next = AtomicUsize::new(0);
-        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(32);
+        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(32).min(todo.len().max(1));
         let parsed: Mutex<Vec<(usize, Arc<FileData>)>> = Mutex::new(Vec::with_capacity(todo.len()));
         // per-harness worker nanoseconds, so the report can name the slow provider
         let src_ns: [AtomicUsize; 7] = Default::default();
-        std::thread::scope(|s| {
-            for _ in 0..threads {
-                s.spawn(|| {
-                    IN_SCAN.with(|c| c.set(true));
-                    let mut buf = Vec::new();
-                    let mut recs = Vec::new();
-                    let mut local = Vec::new();
-                    loop {
-                        let k = next.fetch_add(1, Ordering::Relaxed);
-                        if k >= todo.len() {
-                            break;
+        if !todo.is_empty() {
+            std::thread::scope(|s| {
+                for _ in 0..threads {
+                    s.spawn(|| {
+                        IN_SCAN.with(|c| c.set(true));
+                        let mut buf = Vec::new();
+                        let mut recs = Vec::new();
+                        let mut local = Vec::new();
+                        loop {
+                            let k = next.fetch_add(1, Ordering::Relaxed);
+                            if k >= todo.len() {
+                                break;
+                            }
+                            let j = &jobs[todo[k]];
+                            let tp = Instant::now();
+                            // the session name comes from the path; it is only needed for files being parsed
+                            let session = match j.src {
+                                Src::Claude => claude_session(&j.path),
+                                Src::Droid => droid_session(&j.path),
+                                _ => codex_session(&j.path), // Codex and Pi: the 36 character session id ends the file name
+                            };
+                            if let Some(fd) = parse_file(j.src, &j.path, session, j.size, j.mtime, &mut buf, &mut recs) {
+                                local.push((todo[k], Arc::new(fd)));
+                            }
+                            src_ns[j.src as usize].fetch_add(tp.elapsed().as_nanos() as usize, Ordering::Relaxed);
                         }
-                        let j = &jobs[todo[k]];
-                        let tp = Instant::now();
-                        if let Some(fd) = parse_file(j.src, &j.path, j.session.clone(), j.size, j.mtime, &mut buf, &mut recs) {
-                            local.push((todo[k], Arc::new(fd)));
-                        }
-                        src_ns[j.src as usize].fetch_add(tp.elapsed().as_nanos() as usize, Ordering::Relaxed);
-                    }
-                    parsed.lock().unwrap().extend(local);
-                });
-            }
-        });
+                        parsed.lock().unwrap().extend(local);
+                    });
+                }
+            });
+        }
         for (i, a) in src_ns.iter().enumerate() {
             stats.by_src_ms[i] += a.load(Ordering::Relaxed) as f64 / 1e6;
         }
@@ -1088,11 +1237,11 @@ impl Scanner {
 
         // the database threads have had the whole log parse to finish; join them now
         if let Some(h) = oc_t {
-            if let Ok((r, dt)) = h.join() {
+            if let Ok((oc, ok, dt)) = h.join() {
                 stats.opencode_ms = dt.as_secs_f64() * 1000.0;
-                if let Some(files) = r {
-                    self.oc_files = files;
-                    self.oc_sig = Some(sig);
+                self.oc = oc;
+                if ok {
+                    self.oc.sig = Some(sig);
                 }
             }
         }
@@ -1107,7 +1256,7 @@ impl Scanner {
         }
         stats.ms = t0.elapsed().as_secs_f64() * 1000.0;
         let mut files: Vec<Arc<FileData>> = result.into_iter().flatten().collect();
-        files.extend(self.oc_files.iter().cloned());
+        files.extend(self.oc.files.iter().cloned());
         files.extend(self.dv.files.iter().cloned());
         (files, stats)
     }
@@ -1182,6 +1331,54 @@ struct Totals {
     recent: alerts::Recent,
 }
 
+/// The last page body emitted, kept so a rescan that changed nothing reuses it.
+/// The rolling windows decay with the clock, so their source events are kept
+/// and the windows are summed again on every build.
+#[derive(Default)]
+struct AggCache {
+    /// Arc pointers of the files `body` was built from, and their event count
+    ptrs: Vec<usize>,
+    raw_events: usize,
+    /// everything after the "scan":{...} block through the rows array's `]`
+    body: String,
+    /// events from the last day: (ts, cost, tokens)
+    recent_evts: Vec<(u32, f64, u64)>,
+    events: usize,
+    cost: f64,
+    tokens: u64,
+}
+
+/// Wraps the page body in a fresh scan block and the rolling windows.
+fn emit_json(body: &str, recent_evts: &[(u32, f64, u64)], events: usize, st: &ScanStats, now_secs: u64) -> (String, alerts::Recent) {
+    let mut recent = alerts::Recent::default();
+    for (ts, cost, tok) in recent_evts {
+        if *ts as u64 + 3600 >= now_secs {
+            recent.c1 += cost;
+            recent.t1 += tok;
+            recent.r1 += 1;
+        }
+        if *ts as u64 + 86400 >= now_secs {
+            recent.c24 += cost;
+            recent.t24 += tok;
+        }
+    }
+    let mut j = String::with_capacity(body.len() + 320);
+    let _ = write!(
+        j,
+        "{{\"scan\":{{\"ms\":{:.1},\"files\":{},\"parsed\":{},\"bytes\":{},\"parsedBytes\":{},\"events\":{},\"avx2\":{}}},",
+        st.ms,
+        st.files,
+        st.parsed,
+        st.bytes,
+        st.parsed_bytes,
+        events,
+        unsafe { tk_has_avx2() } != 0
+    );
+    j.push_str(body);
+    let _ = write!(j, ",\"recent\":{{\"c1\":{:.6},\"t1\":{},\"r1\":{},\"c24\":{:.6},\"t24\":{}}}}}", recent.c1, recent.t1, recent.r1, recent.c24, recent.t24);
+    (j, recent)
+}
+
 /// Writes a file for a command-line flag. A failure is printed and returns false, so the run exits with an error.
 fn save_or_report(what: &str, path: &str, body: &str) -> bool {
     match fs::write(path, body) {
@@ -1193,7 +1390,16 @@ fn save_or_report(what: &str, path: &str, body: &str) -> bool {
     }
 }
 
-fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
+fn build_json(agg: &mut AggCache, files: &[Arc<FileData>], st: &ScanStats) -> Totals {
+    let now_secs = std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let ptrs: Vec<usize> = files.iter().map(|f| Arc::as_ptr(f) as usize).collect();
+    let raw: usize = files.iter().map(|f| f.events.len()).sum();
+    // nothing changed since the last build: resend the same page data
+    if !agg.body.is_empty() && agg.ptrs == ptrs && agg.raw_events == raw {
+        let (j, recent) = emit_json(&agg.body, &agg.recent_evts, agg.events, st, now_secs);
+        return Totals { json: j, events: agg.events, cost: agg.cost, tokens: agg.tokens, recent };
+    }
+    *agg = AggCache::default();
     let titles = codex_titles();
     let mut models: Vec<(Src, String)> = Vec::new();
     let mut model_idx: HashMap<(Src, String), usize> = HashMap::new();
@@ -1214,8 +1420,6 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
     let mut seen: HashSet<(u8, u64)> = HashSet::new();
     let mut events = 0usize;
     let (mut tcost, mut ttok) = (0.0f64, 0u64);
-    let mut recent = alerts::Recent::default();
-    let now_secs = std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
 
     // Oldest first, by first event: an original event is always older than a
     // replayed copy in a forked session, so dedupe keeps the original.
@@ -1282,14 +1486,8 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
             tcost += cost;
             let etok = e.input + e.output + e.cache_read + e.cache_w5m + e.cache_w1h;
             ttok += etok;
-            if e.ts as u64 + 3600 >= now_secs {
-                recent.c1 += cost;
-                recent.t1 += etok;
-                recent.r1 += 1;
-            }
             if e.ts as u64 + 86400 >= now_secs {
-                recent.c24 += cost;
-                recent.t24 += etok;
+                agg.recent_evts.push((e.ts, cost, etok));
             }
             let ss = &mut sessions[s];
             ss.first = ss.first.min(e.ts);
@@ -1297,33 +1495,22 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
         }
     }
 
-    let mut j = String::with_capacity(rows.len() * 48 + 65536);
-    let _ = write!(
-        j,
-        "{{\"scan\":{{\"ms\":{:.1},\"files\":{},\"parsed\":{},\"bytes\":{},\"parsedBytes\":{},\"events\":{},\"avx2\":{}}},",
-        st.ms,
-        st.files,
-        st.parsed,
-        st.bytes,
-        st.parsed_bytes,
-        events,
-        unsafe { tk_has_avx2() } != 0
-    );
-    let _ = write!(j, "\"pricesChecked\":\"{}\",\"priceSources\":[", prices::CHECKED);
+    let mut body = String::with_capacity(rows.len() * 48 + 65536);
+    let _ = write!(body, "\"pricesChecked\":\"{}\",\"priceSources\":[", prices::CHECKED);
     for (i, s) in prices::SOURCES.iter().enumerate() {
         if i > 0 {
-            j.push(',');
+            body.push(',');
         }
-        esc(s, &mut j);
+        esc(s, &mut body);
     }
-    j.push_str("],\"harnesses\":[");
+    body.push_str("],\"harnesses\":[");
     for (i, n) in HARNESS_NAMES.iter().enumerate() {
         if i > 0 {
-            j.push(',');
+            body.push(',');
         }
-        esc(n, &mut j);
+        esc(n, &mut body);
     }
-    j.push_str("],\"models\":[");
+    body.push_str("],\"models\":[");
     // The same model under two harnesses gets the harness name on its label, so the
     // legend and the By model list can tell the two apart.
     let base_name = |m: &str| -> String { prices::lookup(m).map(|p| p.name.to_string()).unwrap_or_else(|| m.to_string()) };
@@ -1334,67 +1521,72 @@ fn build_json(files: &[Arc<FileData>], st: &ScanStats) -> Totals {
     }
     for (i, (src, m)) in models.iter().enumerate() {
         if i > 0 {
-            j.push(',');
+            body.push(',');
         }
         let p = prices::lookup(m);
         let base = base_name(m.as_str());
         let shown = if name_uses.get(&base).map_or(false, |s| s.len() > 1) { format!("{base} · {}", HARNESS_NAMES[*src as usize]) } else { base };
-        let _ = write!(j, "{{\"src\":{},\"id\":", *src as u8);
-        esc(m, &mut j);
-        j.push_str(",\"name\":");
-        esc(&shown, &mut j);
-        let _ = write!(j, ",\"priced\":{}}}", p.is_some());
+        let _ = write!(body, "{{\"src\":{},\"id\":", *src as u8);
+        esc(m, &mut body);
+        body.push_str(",\"name\":");
+        esc(&shown, &mut body);
+        let _ = write!(body, ",\"priced\":{}}}", p.is_some());
     }
-    j.push_str("],\"projects\":[");
+    body.push_str("],\"projects\":[");
     for (i, p) in projects.iter().enumerate() {
         if i > 0 {
-            j.push(',');
+            body.push(',');
         }
-        esc(p, &mut j);
+        esc(p, &mut body);
     }
-    j.push_str("],\"sessions\":[");
+    body.push_str("],\"sessions\":[");
     for (i, s) in sessions.iter().enumerate() {
         if i > 0 {
-            j.push(',');
+            body.push(',');
         }
-        let _ = write!(j, "[{},", s.src as u8);
-        esc(&s.id, &mut j);
-        let _ = write!(j, ",{},", s.proj);
-        esc(&s.title, &mut j);
-        let _ = write!(j, ",{},{}]", if s.first == u32::MAX { 0 } else { s.first }, s.last);
+        let _ = write!(body, "[{},", s.src as u8);
+        esc(&s.id, &mut body);
+        let _ = write!(body, ",{},", s.proj);
+        esc(&s.title, &mut body);
+        let _ = write!(body, ",{},{}]", if s.first == u32::MAX { 0 } else { s.first }, s.last);
     }
-    j.push_str("],\"prices\":[");
+    body.push_str("],\"prices\":[");
     for (i, p) in prices::PRICES.iter().enumerate() {
         if i > 0 {
-            j.push(',');
+            body.push(',');
         }
-        j.push('{');
-        j.push_str("\"id\":");
-        esc(p.id, &mut j);
-        j.push_str(",\"name\":");
-        esc(p.name, &mut j);
+        body.push('{');
+        body.push_str("\"id\":");
+        esc(p.id, &mut body);
+        body.push_str(",\"name\":");
+        esc(p.name, &mut body);
         let b = &p.base;
-        let _ = write!(
-            j,
+        let _ = write!(body,
             ",\"in\":{},\"w5\":{},\"w1h\":{},\"cr\":{},\"out\":{},\"longOver\":{},\"lin\":{},\"lcr\":{},\"lout\":{},\"fin\":{},\"fout\":{}}}",
             b.input, b.cache_w5m, b.cache_w1h, b.cache_read, b.output, p.long_over, p.long.input, p.long.cache_read, p.long.output, p.fast_in, p.fast_out
         );
     }
     // rows: [model, session, hour, input, output, cacheRead, cacheWrite, cost, reqs]
-    j.push_str("],\"rows\":[");
+    body.push_str("],\"rows\":[");
     let mut first = true;
     let mut sorted: Vec<_> = rows.into_iter().collect();
     // hour first, then model and session, so the same data always gives the same text
     sorted.sort_unstable_by_key(|(k, _)| (k.2, k.0, k.1));
     for ((m, s, hr), a) in sorted {
         if !first {
-            j.push(',');
+            body.push(',');
         }
         first = false;
-        let _ = write!(j, "[{},{},{},{},{},{},{},{:.6},{}]", m, s, hr, a.input, a.output, a.cache_read, a.cache_write, a.cost, a.reqs);
+        let _ = write!(body, "[{},{},{},{},{},{},{},{:.6},{}]", m, s, hr, a.input, a.output, a.cache_read, a.cache_write, a.cost, a.reqs);
     }
-    // the rolling windows the alert rules use, so the page can show the same numbers
-    let _ = write!(j, "],\"recent\":{{\"c1\":{:.6},\"t1\":{},\"r1\":{},\"c24\":{:.6},\"t24\":{}}}}}", recent.c1, recent.t1, recent.r1, recent.c24, recent.t24);
+    body.push(']');
+    agg.ptrs = ptrs;
+    agg.raw_events = raw;
+    agg.body = body;
+    agg.events = events;
+    agg.cost = tcost;
+    agg.tokens = ttok;
+    let (j, recent) = emit_json(&agg.body, &agg.recent_evts, events, st, now_secs);
     Totals { json: j, events, cost: tcost, tokens: ttok, recent }
 }
 
@@ -1428,7 +1620,7 @@ fn serve() {
             continue;
         }
         let (files, st) = sc.scan();
-        let t = build_json(&files, &st);
+        let t = build_json(&mut sc.agg, &files, &st);
         if writeln!(out, "{}", t.json).and_then(|_| out.flush()).is_err() {
             break;
         }
@@ -1536,13 +1728,15 @@ fn main() {
         attach_console();
         let mut sc = Scanner::default();
         let (files, st) = sc.scan();
-        let t = build_json(&files, &st);
+        let t = build_json(&mut sc.agg, &files, &st);
         let (files2, st2) = sc.scan();
         let tj0 = Instant::now();
-        let _warm = build_json(&files2, &st2);
+        let _warm = build_json(&mut sc.agg, &files2, &st2);
         let tj = tj0.elapsed().as_secs_f64() * 1000.0;
-        // the two scans must give the same data; the timings in the scan stats are left out of the comparison
-        let warm_same = build_json(&files, &ScanStats::default()).json == build_json(&files2, &ScanStats::default()).json;
+        // the two scans must give the same data; the timings in the scan stats are left out of the
+        // comparison, and fresh caches force the full aggregation on both sides
+        let (mut a1, mut a2) = (AggCache::default(), AggCache::default());
+        let warm_same = build_json(&mut a1, &files, &ScanStats::default()).json == build_json(&mut a2, &files2, &ScanStats::default()).json;
         // per-provider timing detail for the cold scan and the warm one
         let detail = |s: &ScanStats| {
             let mut d = String::new();
@@ -1674,7 +1868,7 @@ fn run_gui(smoke: bool, report: Option<String>) {
                     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         let mut g = sc.lock().unwrap_or_else(|e| e.into_inner());
                         let (files, st) = g.scan();
-                        let t = build_json(&files, &st);
+                        let t = build_json(&mut g.agg, &files, &st);
                         (t.json, t.recent)
                     }));
                     busy.store(false, Ordering::SeqCst);

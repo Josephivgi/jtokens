@@ -263,7 +263,9 @@ fn opencode_keeps_a_row_with_a_missing_title_and_reads_text_counts() {
         )
         .unwrap();
     }
-    let files = scan_opencode(&db).expect("readable database, so not an error");
+    let mut st = DbScan::default();
+    scan_opencode(&db, &mut st).expect("readable database, so not an error");
+    let files = st.files;
     assert_eq!(files.len(), 1, "the row with no title is still a session");
     let e = &files[0].events[0];
     assert_eq!((e.input, e.output), (500, 2), "numeric text is read; a fraction is cut to a whole count");
@@ -284,7 +286,9 @@ fn opencode_skips_a_message_of_the_wrong_type_and_keeps_the_rest() {
         )
         .unwrap();
     }
-    let files = scan_opencode(&db).expect("the read itself succeeded");
+    let mut st = DbScan::default();
+    scan_opencode(&db, &mut st).expect("the read itself succeeded");
+    let files = st.files;
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].events.len(), 1, "the message with a text time is skipped, the good one is kept");
     assert_eq!((files[0].events[0].input, files[0].events[0].output), (500, 90));
@@ -304,7 +308,9 @@ fn counts_are_capped_so_one_bad_value_cannot_inflate_totals() {
         )
         .unwrap();
     }
-    let files = scan_opencode(&db).expect("readable");
+    let mut st = DbScan::default();
+    scan_opencode(&db, &mut st).expect("readable");
+    let files = st.files;
     assert_eq!(files[0].events[0].input, 1_000_000_000_000);
     assert_eq!(files[0].events[0].output, 3);
 }
@@ -339,7 +345,9 @@ fn opencode_reads_assistant_usage_per_session_with_reasoning_added_to_output() {
         c.execute("INSERT INTO message VALUES ('m2', 'ses_1', 1794621602000, ?1)", [asst]).unwrap();
         c.execute("INSERT INTO message VALUES ('m3', 'ses_2', 1794621603000, '{\"role\":\"assistant\",\"modelID\":\"x\",\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}}}')", []).unwrap();
     }
-    let files = scan_opencode(&db).expect("readable database");
+    let mut st = DbScan::default();
+    scan_opencode(&db, &mut st).expect("readable database");
+    let files = st.files;
     assert_eq!(files.len(), 1, "a session with no usage is left out");
     let fd = &files[0];
     assert_eq!(fd.session, "ses_1");
@@ -356,7 +364,7 @@ fn opencode_reads_assistant_usage_per_session_with_reasoning_added_to_output() {
 fn opencode_database_that_is_missing_gives_nothing() {
     let t = TempDir::new("opencode-none");
     // a database that is not there cannot be read, so the caller keeps its last numbers
-    assert!(scan_opencode(&t.path().join("nope.db")).is_none());
+    assert!(scan_opencode(&t.path().join("nope.db"), &mut DbScan::default()).is_none());
 }
 
 // ---------------------------------------------------------------- aggregation
@@ -372,7 +380,7 @@ fn a_record_copied_into_two_files_is_counted_once() {
     // a forked session replays its parent's records with the same ids
     let files = vec![one_event_file(Src::Pi, "a", 42, 100), one_event_file(Src::Pi, "b", 42, 100)];
     let st = ScanStats::default();
-    let t = build_json(&files, &st);
+    let t = build_json(&mut AggCache::default(), &files, &st);
     assert_eq!(t.events, 1);
     assert_eq!(t.tokens, 100);
 }
@@ -381,7 +389,7 @@ fn a_record_copied_into_two_files_is_counted_once() {
 fn the_same_id_from_two_harnesses_is_counted_twice() {
     // ids are only unique within one tool, so a clash across tools must not drop an event
     let files = vec![one_event_file(Src::Pi, "a", 42, 100), one_event_file(Src::Droid, "b", 42, 100)];
-    let t = build_json(&files, &ScanStats::default());
+    let t = build_json(&mut AggCache::default(), &files, &ScanStats::default());
     assert_eq!(t.events, 2);
     assert_eq!(t.tokens, 200);
 }
@@ -392,14 +400,14 @@ fn a_model_used_by_two_harnesses_gets_the_harness_on_its_label() {
     let mut b = one_event_file(Src::Droid, "b", 2, 10);
     Arc::get_mut(&mut a).unwrap().models = vec!["claude-sonnet-5-5".into()];
     Arc::get_mut(&mut b).unwrap().models = vec!["claude-sonnet-5-5".into()];
-    let t = build_json(&[a, b], &ScanStats::default());
+    let t = build_json(&mut AggCache::default(), &[a, b], &ScanStats::default());
     assert!(t.json.contains("· Pi\""), "{}", t.json.len());
     assert!(t.json.contains("· Droid\""));
 }
 
 #[test]
 fn a_model_used_by_one_harness_keeps_its_plain_label() {
-    let t = build_json(&[one_event_file(Src::Pi, "a", 1, 10)], &ScanStats::default());
+    let t = build_json(&mut AggCache::default(), &[one_event_file(Src::Pi, "a", 1, 10)], &ScanStats::default());
     assert!(!t.json.contains("· Pi"));
 }
 
@@ -407,14 +415,14 @@ fn a_model_used_by_one_harness_keeps_its_plain_label() {
 fn two_ids_of_one_model_inside_one_harness_get_no_harness_suffix() {
     let mut a = one_event_file(Src::Pi, "a", 1, 10);
     Arc::get_mut(&mut a).unwrap().models = vec!["claude-sonnet-5-5".into(), "claude-sonnet-5-5-20260101".into()];
-    let t = build_json(&[a], &ScanStats::default());
+    let t = build_json(&mut AggCache::default(), &[a], &ScanStats::default());
     assert!(!t.json.contains("· Pi"), "one harness needs no suffix");
 }
 
 #[test]
 fn records_without_an_id_are_never_merged() {
     let files = vec![one_event_file(Src::Pi, "a", 0, 100), one_event_file(Src::Pi, "b", 0, 100)];
-    let t = build_json(&files, &ScanStats::default());
+    let t = build_json(&mut AggCache::default(), &files, &ScanStats::default());
     assert_eq!(t.events, 2);
     assert_eq!(t.tokens, 200);
 }
@@ -422,7 +430,7 @@ fn records_without_an_id_are_never_merged() {
 #[test]
 fn the_page_gets_every_harness_name_and_model_source() {
     let files = vec![one_event_file(Src::Droid, "d", 7, 5)];
-    let t = build_json(&files, &ScanStats::default());
+    let t = build_json(&mut AggCache::default(), &files, &ScanStats::default());
     assert!(t.json.contains(r#""harnesses":["Claude Code","Codex","OpenCode","Pi","Droid","Qwen Code","Devin"]"#), "{}", &t.json[..t.json.len().min(300)]);
     assert!(t.json.contains(r#""models":[{"src":4,"#), "model is tagged with its harness");
 }
@@ -439,7 +447,7 @@ fn harness_list_and_source_numbers_agree() {
 fn unpriced_models_count_tokens_but_not_cost() {
     let mut fd = FileData { src: Src::OpenCode, size: 0, mtime: 0, session: "s".into(), cwd: r"C:\p".into(), title: String::new(), models: vec!["muse-spark-1.3-contributor".into()], events: Vec::new() };
     fd.events.push(Event { ts: 1_794_621_600, model: 0, input: 1_000_000, output: 0, cache_read: 0, cache_w5m: 0, cache_w1h: 0, id: 1, fast: false });
-    let t = build_json(&[Arc::new(fd)], &ScanStats::default());
+    let t = build_json(&mut AggCache::default(), &[Arc::new(fd)], &ScanStats::default());
     assert_eq!(t.tokens, 1_000_000);
     assert_eq!(t.cost, 0.0);
     assert!(t.json.contains(r#""priced":false"#));
@@ -569,7 +577,7 @@ fn devin_reads_assistant_metrics_per_session_and_skips_the_rest() {
             conn.execute("INSERT INTO message_nodes (session_id, node_id, chat_message, created_at) VALUES (?1, ?2, ?3, ?4)", rusqlite::params![sid, created % 1000, msg, created]).unwrap();
         }
     }
-    let mut st = DvScan::default();
+    let mut st = DbScan::default();
     scan_devin(&db, &mut st).expect("the database reads");
     let files = st.files;
     assert_eq!(files.len(), 2, "one file per session");
@@ -604,7 +612,7 @@ fn devin_speed_tails_mark_the_event_fast() {
         )
         .unwrap();
     }
-    let mut st = DvScan::default();
+    let mut st = DbScan::default();
     scan_devin(&db, &mut st).expect("the database reads");
     let evs = &st.files[0].events;
     assert_eq!(evs.len(), 3);
@@ -615,10 +623,10 @@ fn devin_speed_tails_mark_the_event_fast() {
 #[test]
 fn devin_database_that_is_missing_or_empty_gives_no_events() {
     let t = TempDir::new("devin-empty");
-    assert!(scan_devin(&t.path().join("none.db"), &mut DvScan::default()).is_none(), "a missing database cannot be opened");
+    assert!(scan_devin(&t.path().join("none.db"), &mut DbScan::default()).is_none(), "a missing database cannot be opened");
     let db = t.path().join("empty.db");
     rusqlite::Connection::open(&db).unwrap().execute_batch("CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT, title TEXT); CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY, session_id TEXT, chat_message TEXT, created_at INTEGER);").unwrap();
-    let mut st = DvScan::default();
+    let mut st = DbScan::default();
     assert_eq!(scan_devin(&db, &mut st).map(|_| st.files.len()), Some(0));
 }
 
@@ -636,7 +644,7 @@ fn devin_rescan_merges_new_and_updated_rows() {
            INSERT INTO message_nodes VALUES (1, 's1', '{"role":"assistant","metadata":{"metrics":{"input_tokens":10,"output_tokens":1,"cache_read_tokens":0,"cache_creation_tokens":0}}}', 1795053600000);"#,
     )
     .unwrap();
-    let mut st = DvScan::default();
+    let mut st = DbScan::default();
     scan_devin(&db, &mut st).expect("first read");
     assert_eq!(st.files[0].events.len(), 1);
     // the row's metrics grew after insert; a brand new row arrived too

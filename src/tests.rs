@@ -121,8 +121,14 @@ fn devin_effort_and_speed_tails_still_find_the_model_row() {
     assert!(std::ptr::eq(prices::lookup("claude-fable-5-2-medium").unwrap(), prices::lookup("claude-fable-5-2").unwrap()));
     // and writes version numbers with dashes: gpt-6-1-sol-low is gpt-6.1-sol at low effort
     assert!(std::ptr::eq(prices::lookup("gpt-6-1-sol-low").unwrap(), prices::lookup("gpt-6.1-sol").unwrap()));
-    assert!(prices::lookup("swe-2-high").is_none(), "Cognition's own models have no public price");
-    assert!(prices::lookup("swe-2-high-lightning").is_none());
+    // Cognition's own models peel the same way to their price rows
+    let swe2 = prices::lookup("swe-2").unwrap();
+    assert!(std::ptr::eq(prices::lookup("swe-2-high").unwrap(), swe2));
+    assert!(std::ptr::eq(prices::lookup("swe-2-high-lightning").unwrap(), swe2));
+    assert!(std::ptr::eq(prices::lookup("swe-2-max").unwrap(), swe2));
+    let flash = prices::lookup("swe-2-flash").unwrap();
+    assert!(std::ptr::eq(prices::lookup("swe-2-flash-medium").unwrap(), flash));
+    assert!(std::ptr::eq(prices::lookup("swe-2-flash-medium-lightning").unwrap(), flash));
     assert!(prices::lookup("deepseek-v4-flash-free").is_none(), "a tail that is not a suffix word does not peel");
 }
 
@@ -134,6 +140,14 @@ fn cost_uses_list_prices_per_million_tokens() {
     let mixed = prices::Use { input: 0, cache_w5m: 1_000_000, cache_w1h: 0, cache_read: 1_000_000, output: 1_000_000, fast: false, ts: 0 };
     // cache write (5 minute) is 1.25x input, cache read is 0.10, output is 10
     assert!((prices::cost(p, &mixed) - (2.5 + 0.10 + 10.0)).abs() < 1e-9);
+    // SWE-2: $3 in, $0.30 cache read, $15 out; cache write is at the input price
+    let swe = prices::lookup("swe-2").unwrap();
+    assert!((prices::cost(swe, &prices::Use { input: 1_000_000, cache_w5m: 1_000_000, cache_w1h: 0, cache_read: 1_000_000, output: 1_000_000, fast: false, ts: 0 }) - (3.0 + 3.0 + 0.30 + 15.0)).abs() < 1e-9);
+    // lightning doubles it
+    assert!((prices::cost(swe, &prices::Use { input: 1_000_000, cache_w5m: 0, cache_w1h: 0, cache_read: 0, output: 0, fast: true, ts: 0 }) - 6.0).abs() < 1e-9);
+    // SWE-2 Flash: $0.10 in, $0.125 write, $0.01 read, $0.50 out
+    let flash = prices::lookup("swe-2-flash").unwrap();
+    assert!((prices::cost(flash, &prices::Use { input: 1_000_000, cache_w5m: 1_000_000, cache_w1h: 0, cache_read: 1_000_000, output: 1_000_000, fast: false, ts: 0 }) - (0.10 + 0.125 + 0.01 + 0.50)).abs() < 1e-9);
 }
 
 // ---------------------------------------------------------------- readers

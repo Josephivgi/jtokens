@@ -1258,6 +1258,9 @@ impl Scanner {
         let mut files: Vec<Arc<FileData>> = result.into_iter().flatten().collect();
         files.extend(self.oc.files.iter().cloned());
         files.extend(self.dv.files.iter().cloned());
+        // the walk order changes run to run, so the list is sorted: the same set
+        // gives the same order, which the page body cache and the sort below rely on
+        files.sort_by(|a, b| (a.src as u8, a.session.as_str(), a.mtime, a.size).cmp(&(b.src as u8, b.session.as_str(), b.mtime, b.size)));
         (files, stats)
     }
 }
@@ -1422,9 +1425,12 @@ fn build_json(agg: &mut AggCache, files: &[Arc<FileData>], st: &ScanStats) -> To
     let (mut tcost, mut ttok) = (0.0f64, 0u64);
 
     // Oldest first, by first event: an original event is always older than a
-    // replayed copy in a forked session, so dedupe keeps the original.
-    let mut order: Vec<&Arc<FileData>> = files.iter().collect();
-    order.sort_by_key(|f| (f.events.iter().map(|e| e.ts).min().unwrap_or(u32::MAX), f.mtime));
+    // replayed copy in a forked session, so dedupe keeps the original. The
+    // (src, session) tail makes the sort total, so two runs of the same input
+    // always give the same page even when files tie on time.
+    let mut order: Vec<(u32, u64, u8, &str, &Arc<FileData>)> = files.iter().map(|f| (f.events.iter().map(|e| e.ts).min().unwrap_or(u32::MAX), f.mtime, f.src as u8, f.session.as_str(), f)).collect();
+    order.sort_by(|a, b| (a.0, a.1, a.2, a.3).cmp(&(b.0, b.1, b.2, b.3)));
+    let order: Vec<&Arc<FileData>> = order.into_iter().map(|t| t.4).collect();
 
     for fd in order {
         if fd.events.is_empty() {

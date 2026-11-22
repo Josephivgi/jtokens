@@ -1,7 +1,7 @@
 // API list prices in USD per million tokens. Each row is from the provider's own pricing page
 // (see SOURCES); rows marked "aggregator" are not on the provider's page and should be re-checked.
 
-pub const CHECKED: &str = "2026-11-17";
+pub const CHECKED: &str = "2026-11-21";
 pub const SOURCES: &[&str] = &[
     "https://platform.claude.com/docs/en/about-claude/pricing",
     "https://developers.openai.com/api/docs/pricing",
@@ -10,6 +10,7 @@ pub const SOURCES: &[&str] = &[
     "https://docs.x.ai/developers/models",
     "https://docs.z.ai/guides/overview/pricing",
     "https://platform.minimax.io/docs/guides/pricing-paygo",
+    "https://docs.devinenterprise.com/desktop/models",
 ];
 
 #[derive(Clone, Copy)]
@@ -170,6 +171,21 @@ pub static PRICES: &[Price] = &[
     // MiniMax (platform.minimax.io). Above 512k input tokens the long rate applies.
     olt("minimax-m3", "MiniMax M3", (0.30, 0.06, 1.20), 512_000, (0.60, 0.12, 2.40)),
     o("minimax-m3.1-flash", "MiniMax M3.1 Flash", 0.15, 0.015, 0.60),
+    // Cognition SWE (docs.devinenterprise.com/desktop/models). List prices; promos
+    // (SWE-2 free to 2026-11-30, Flash free to 2026-12-04 on self-serve) are not
+    // modelled. SWE-2 lists no separate cache write rate, so writes are billed at
+    // the input price. Lightning uses the app's fast-mode 2x convention; the page
+    // only names a fast rate for Claude and GPT.
+    fast(
+        Price { id: "swe-2", name: "SWE-2", base: written(3.0, 3.0, 3.0, 0.30, 15.0), long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: 0.1, off_peak: None },
+        6.0,
+        30.0,
+    ),
+    fast(
+        Price { id: "swe-2-flash", name: "SWE-2 Flash", base: written(0.10, 0.125, 0.125, 0.01, 0.50), long_over: 0, long: Z, fast_in: 0.0, fast_out: 0.0, read_mult: 0.1, off_peak: None },
+        0.20,
+        1.0,
+    ),
 ];
 
 /// Words Devin adds after the vendor's model id: the effort (low/medium/high/max) and speed

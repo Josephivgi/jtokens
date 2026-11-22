@@ -20,6 +20,8 @@ const PRICE = {
   'claude-sonnet-5-5': { input: 2.0, read: 0.10, write5m: 2.5, output: 10.0 },
   'gpt-6-sol': { input: 2.0, read: 0.20, write5m: 0, output: 10.0 },
   'gpt-5.6-sol': { input: 4.0, read: 0.40, write5m: 0, output: 20.0 },
+  // Cognition SWE-2: cache writes are billed at the input price (no separate write rate)
+  'swe-2-high': { input: 3.0, read: 0.30, write5m: 3.0, output: 15.0 },
   // DeepSeek: peak rates, and off-peak (half) outside 01-04 and 06-10 UTC on weekdays
   'deepseek-v4.1-flash': { input: 0.30, read: 0.006, write5m: 0, output: 1.20, off: { input: 0.15, read: 0.003, write5m: 0, output: 0.60 } },
 };
@@ -63,7 +65,7 @@ const EVENTS = [
   // Qwen Code (one record per reply; prompt tokens include the cached part; no price row, so cost 0)
   { h: 'qwen', w: 'today', model: 'qwen3.5', input: 600, output: 70, cacheRead: 400, cacheWrite: 0 },
   { h: 'qwen', w: 'd45', model: 'qwen3.5', input: 50, output: 5, cacheRead: 0, cacheWrite: 0 },
-  // Devin CLI (one sessions database; usage in each assistant reply's metrics; no price row, so cost 0)
+  // Devin CLI (one sessions database; usage in each assistant reply's metrics)
   { h: 'devin', w: 'today', model: 'swe-2-high', input: 500, output: 60, cacheRead: 200, cacheWrite: 10 },
   { h: 'devin', w: 'd45', model: 'swe-2-high', input: 40, output: 4, cacheRead: 0, cacheWrite: 0 },
 ];

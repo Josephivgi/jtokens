@@ -151,12 +151,14 @@ td.wrap { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; 
 tbody tr { cursor: pointer; }
 tbody tr:hover td { background-color: var(--surface-2); }
 #priceTable tbody tr { cursor: default; }
-#priceTable tbody tr.pgroup:hover td { background-color: var(--surface-2); }
 #priceTable th, #priceTable td { padding: 4px 6px; font-size: 12px; } /* the price columns fit a 1200px window */
 #priceTable td:first-child, #priceTable td.muted { white-space: normal; overflow-wrap: anywhere; } /* names, ids and rate tiers wrap so the table keeps the 1200px fit */
-#priceTable thead tr:nth-child(2) th { top: var(--thh, 26px); } /* the "5 min / 1 hour" row sticks under its "Cache write" parent */
-#priceTable th.ghead { text-align: center; }
-#priceTable .pgroup td { background: var(--surface-2); color: var(--text-secondary); font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; padding: 7px 6px 4px; }
+.pnav { flex: none; flex-wrap: wrap; margin-bottom: 8px; }
+.psec + .psec { margin-top: 16px; }
+.psec-h { position: sticky; top: 0; z-index: 2; height: 30px; display: flex; align-items: center; gap: 10px; background: var(--surface-1); border-bottom: 1px solid var(--border); }
+.psec-h b { font-size: 13px; font-weight: 650; }
+.psec-h .sub2 { color: var(--text-muted); font-size: 11px; }
+#priceTable .psec th { top: 30px; } /* the column labels stick under their provider header */
 #priceTable tr.used td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 #priceTable .pname { font-weight: 550; }
 #priceTable .tag { font-size: 10px; line-height: 1.6; color: var(--accent-text); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 0 7px; margin-left: 8px; white-space: nowrap; }
@@ -402,6 +404,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
   <section id="tab-prices" class="dash" role="tabpanel" aria-labelledby="tab-btn-prices" hidden>
     <div class="card prices">
       <div class="hd"><h2 id="priceTitle">API list prices used for cost</h2><span class="sub" id="priceSub"></span><span class="spacer"></span><input class="pfind" id="priceFilter" type="search" placeholder="Filter models" aria-label="Filter models"></div>
+      <div class="pnav seg mini" id="priceProv" role="group" aria-label="Provider"></div>
       <div class="body">
         <div id="priceTable"></div>
         <div class="pnotes">
@@ -1524,10 +1527,12 @@ ${fmtTok(a.tok)} tokens, ${a.priced ? usd(a.cost) : "no public price"}"><td clas
   rove("#projects", "tbody tr");
 }
 
-let pricesKey = null, priceQuery = "";
+let pricesKey = null, priceQuery = "", priceProv = "all";
 // provider group labels, in the order the scanner emits them; a prefix not listed lands in Other
 const PRICE_GROUPS = [[/^claude-/, "Anthropic"], [/^(gpt-|o\d)/, "OpenAI"], [/^deepseek-/, "DeepSeek"], [/^kimi-/, "Moonshot Kimi"], [/^grok-/, "xAI"], [/^glm-/, "Z.ai"], [/^minimax-/, "MiniMax"], [/^swe-/, "Cognition"]];
 const priceGroup = (id) => { for (const [re, n] of PRICE_GROUPS) if (re.test(id)) return n; return "Other"; };
+const PRICE_RATE_KEYS = ["in", "w5", "w1h", "cr", "out", "longOver", "lin", "lcr", "lout", "fin", "fout", "offIn", "offCr", "offOut"];
+const PRICE_READ = { OpenAI: "Cached input" }; // providers name the cache read column differently
 function renderPrices() {
   const pk = JSON.stringify([D.pricesChecked, D.priceSources, D.prices, D.models.map((m) => [m.id, m.priced])]);
   if (pk === pricesKey && $("#priceTable").innerHTML) return; pricesKey = pk;
@@ -1536,48 +1541,57 @@ function renderPrices() {
   $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + src + ".";
   $("#priceSub").title = $("#priceSub").textContent;
   const used = new Set(D.models.map((m) => findPrice(m.id)).filter(Boolean)); // findPrice applies the same match the cost does
+  const byId = new Map(D.prices.map((p) => [p.id, p]));
+  // one section per provider, a row per (name, rate set): a model listed under several
+  // ids, like deepseek-flash's four, shows once with every id
+  const groups = new Map();
+  for (const p of D.prices) {
+    const g = priceGroup(p.id);
+    let list = groups.get(g);
+    if (!list) groups.set(g, list = []);
+    const dup = list.find((x) => x.p.name === p.name && PRICE_RATE_KEYS.every((k) => x.p[k] === p[k]));
+    if (dup) dup.ids.push(p.id); else list.push({ p, ids: [p.id] });
+  }
   // each column uses the decimals its finest price needs, so the points line up
   const decOf = (v) => { if (!v) return 0; let d = 0; while (d < 4 && Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) > 1e-9) d++; return d; };
   const colDec = {}; for (const k of ["in", "w5", "w1h", "cr", "out"]) colDec[k] = Math.max(2, ...D.prices.map((p) => decOf(p[k])));
   const money = (v, k) => v ? "$" + v.toFixed(k ? colDec[k] : Math.max(2, decOf(v))) : k ? `<span class="na">—</span>` : "";
   const alt = (label, parts) => `<div class="alt"><span>${label}</span>${parts}</div>`;
-  let rows = "", group = null;
-  for (const p of D.prices) {
-    const g = priceGroup(p.id);
-    if (g !== group) { group = g; rows += `<tr class="pgroup"><td colspan="8">${esc(g)}</td></tr>`; }
-    const more = [];
-    if (p.longOver) more.push(alt(`over ${fmtTok(p.longOver)}`, `${money(p.lin)} in · ${money(p.lcr)} read · ${money(p.lout)} out`));
-    if (p.fin) more.push(alt("fast mode", `${money(p.fin)} in · ${money(p.fout)} out`));
-    if (p.offIn) more.push(alt("off-peak", `${money(p.offIn)} in · ${money(p.offCr)} read · ${money(p.offOut)} out`));
-    const inLogs = used.has(p);
-    rows += `<tr${inLogs ? ` class="used"` : ""} data-s="${esc((g + " " + p.name + " " + p.id).toLowerCase())}"><td><span class="pname">${esc(p.name)}</span>${inLogs ? ` <span class="tag">in your logs</span>` : ""}</td><td class="muted pid">${esc(p.id)}</td>
-      <td class="num">${money(p.in, "in")}</td><td class="num">${money(p.out, "out")}</td><td class="num">${money(p.cr, "cr")}</td><td class="num">${money(p.w5, "w5")}</td><td class="num">${money(p.w1h, "w1h")}</td>
-      <td class="muted">${more.join("") || `<span class="na">—</span>`}</td></tr>`;
+  let out = "";
+  for (const [g, list] of groups) {
+    // a column only shows when a model in the group has a rate for it, so providers
+    // without cache writes or extra tiers keep a short table
+    const w5 = list.some((x) => x.p.w5), w1h = list.some((x) => x.p.w1h), other = list.some((x) => x.p.longOver || x.p.fin || x.p.offIn);
+    const usedN = list.filter((x) => x.ids.some((id) => used.has(byId.get(id)))).length;
+    out += `<div class="psec" data-prov="${esc(g)}"><div class="psec-h"><b>${esc(g)}</b><span class="sub2">${list.length} model${list.length === 1 ? "" : "s"}${usedN ? ` · ${usedN} in your logs` : ""}</span></div><table aria-label="${esc(g)} prices"><thead><tr><th>Model</th><th>ID</th><th class="num">Input</th><th class="num">Output</th><th class="num">${PRICE_READ[g] || "Cache read"}</th>${w5 ? `<th class="num">Write 5 min</th>` : ""}${w1h ? `<th class="num">Write 1 hour</th>` : ""}${other ? `<th>Other rates</th>` : ""}</tr></thead><tbody>` +
+      list.map((x) => {
+        const p = x.p, inLogs = x.ids.some((id) => used.has(byId.get(id))), more = [];
+        if (p.longOver) more.push(alt(`over ${fmtTok(p.longOver)}`, `${money(p.lin)} in · ${money(p.lcr)} read · ${money(p.lout)} out`));
+        if (p.fin) more.push(alt("fast mode", `${money(p.fin)} in · ${money(p.fout)} out`));
+        if (p.offIn) more.push(alt("off-peak", `${money(p.offIn)} in · ${money(p.offCr)} read · ${money(p.offOut)} out`));
+        return `<tr${inLogs ? ` class="used"` : ""} data-s="${esc((g + " " + p.name + " " + x.ids.join(" ")).toLowerCase())}"><td><span class="pname">${esc(p.name)}</span>${inLogs ? ` <span class="tag">in your logs</span>` : ""}</td><td class="muted pid">${x.ids.map((i) => esc(i)).join("<br>")}</td><td class="num">${money(p.in, "in")}</td><td class="num">${money(p.out, "out")}</td><td class="num">${money(p.cr, "cr")}</td>${w5 ? `<td class="num">${money(p.w5, "w5")}</td>` : ""}${w1h ? `<td class="num">${money(p.w1h, "w1h")}</td>` : ""}${other ? `<td class="muted">${more.join("") || `<span class="na">—</span>`}</td>` : ""}</tr>`;
+      }).join("") + `</tbody></table></div>`;
   }
-  $("#priceTable").innerHTML = `<table aria-labelledby="priceTitle"><thead><tr><th rowspan="2">Model</th><th rowspan="2">ID</th><th class="num" rowspan="2">Input</th><th class="num" rowspan="2">Output</th><th class="num" rowspan="2">Cache read</th><th class="ghead" colspan="2">Cache write</th><th rowspan="2">Other rates</th></tr><tr><th class="num">5 min</th><th class="num">1 hour</th></tr></thead><tbody>${rows}</tbody></table>
-  <div class="empty" id="priceEmpty" hidden>No models match the filter.</div>
-  ${D.models.filter((m) => !m.priced).length ? `<div class="note">In your logs with no public API price: ${D.models.filter((m) => !m.priced).map((m) => esc(m.id)).join(", ")}.</div>` : ""}`;
-  stickPriceHead();
+  $("#priceTable").innerHTML = out + `<div class="empty" id="priceEmpty" hidden>No models match.</div>` +
+    (D.models.filter((m) => !m.priced).length ? `<div class="note">In your logs with no public API price: ${D.models.filter((m) => !m.priced).map((m) => esc(m.id)).join(", ")}.</div>` : "");
+  $("#priceProv").innerHTML = `<button data-v="all" aria-pressed="${priceProv === "all"}">All providers</button>` + [...groups.keys()].map((g) => `<button data-v="${esc(g)}" aria-pressed="${priceProv === g}">${esc(g)}</button>`).join("");
   applyPriceFilter();
 }
-// the "5 min / 1 hour" row sticks just under the "Cache write" row; measure it while the tab shows
-function stickPriceHead() {
-  const h1 = $("#priceTable thead tr");
-  if (h1) $("#priceTable").style.setProperty("--thh", h1.getBoundingClientRect().height + "px");
-}
-// the filter hides rows and the provider groups it empties; it survives a redraw
+// the provider seg and the name filter hide sections and rows; both survive a redraw
 function applyPriceFilter() {
-  const tb = $("#priceTable tbody"), emp = $("#priceEmpty");
-  if (!tb) return;
   const q = priceQuery.trim().toLowerCase();
-  let groupRow = null, groupAny = false, shown = 0;
-  for (const tr of tb.children) {
-    if (tr.classList.contains("pgroup")) { if (groupRow) groupRow.hidden = !groupAny; groupRow = tr; groupAny = false; continue; }
-    const show = !q || tr.dataset.s.includes(q);
-    tr.hidden = !show;
-    if (show) { groupAny = true; shown++; }
+  let shown = 0;
+  for (const sec of document.querySelectorAll("#priceTable .psec")) {
+    let any = false;
+    for (const tr of sec.querySelectorAll("tbody tr")) {
+      const show = (priceProv === "all" || sec.dataset.prov === priceProv) && (!q || tr.dataset.s.includes(q));
+      tr.hidden = !show;
+      if (show) any = true;
+    }
+    sec.hidden = !any;
+    if (any) shown++;
   }
-  if (groupRow) groupRow.hidden = !groupAny;
+  const emp = $("#priceEmpty");
   if (emp) emp.hidden = shown > 0;
 }
 document.addEventListener("input", (e) => { if (e.target.id === "priceFilter") { priceQuery = e.target.value; applyPriceFilter(); } });
@@ -1657,6 +1671,7 @@ document.addEventListener("click", (e) => {
     const g = seg.parentElement.id;
     if (seg.getAttribute("aria-pressed") === "true") return; // already selected: nothing changes, filters stay
     seg.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === seg));
+    if (g === "priceProv") { priceProv = seg.dataset.v; applyPriceFilter(); return; }
     if (g === "srcSeg") { state.src = seg.dataset.v; pickColors(); if (state.day && FD()) { if (state.day[1] < FD()) state.day = null; else if (state.day[0] < FD()) state.day = [FD(), state.day[1]]; } state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "metricSeg") { state.metric = seg.dataset.v; pickColors(); }
@@ -1679,7 +1694,6 @@ document.addEventListener("click", (e) => {
     $("#tab-overview").hidden = tab.dataset.tab !== "overview";
     $("#tab-alerts").hidden = tab.dataset.tab !== "alerts";
     $("#tab-prices").hidden = tab.dataset.tab !== "prices";
-    if (tab.dataset.tab === "prices") stickPriceHead();
     return;
   }
   const open = t.closest("[data-open]");

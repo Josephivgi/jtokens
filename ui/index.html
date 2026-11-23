@@ -136,6 +136,7 @@ svg text { fill: var(--text-muted); font-size: 11px; font-family: var(--font); }
 .mixrow span:first-child { display: inline-flex; gap: 6px; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
 .mixrow i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 .mixrow span + span { text-align: right; }
+td .cdot { width: 8px; height: 8px; border-radius: 3px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 th { color: var(--text-secondary); font-weight: 600; font-size: 12px; user-select: none; position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
@@ -227,12 +228,23 @@ body.on-alerts #rangeSeg, body.on-alerts #metricSeg { display: none; }
 .acards > .card:first-child { grid-column: 1 / -1; }
 .alrow { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .allimit { color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
-.allimit input { width: 90px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; color: var(--text-primary); }
-#alTokH { width: 120px; }
-.alitem { padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+.alfield { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; }
+.alfield:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.alfield .u { color: var(--text-muted); }
+.alfield input { background: none; border: 0; padding: 3px 0; color: var(--text-primary); width: 78px; }
+.alfield input:focus-visible { outline: none; }
+.alfield input:disabled { color: var(--text-muted); }
+.alfield:has(input:disabled) { opacity: .65; }
+#alTokH { width: 110px; }
+.alitem { padding: 7px 8px; border-bottom: 1px solid var(--grid); }
 .alitem .t { display: flex; justify-content: space-between; gap: 10px; }
+.alitem .t > span:first-child { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.alitem .t > span:first-child::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: var(--s4); flex: none; }
 .alitem .when { color: var(--text-muted); white-space: nowrap; }
 .alitem .d { color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+.alempty { flex-direction: column; gap: 7px; padding: 40px 0; }
+.alempty svg { opacity: .45; }
+.alempty .h { color: var(--text-secondary); font-weight: 600; }
 .rep { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; }
 .rep h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
 .rep .rr { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
@@ -368,9 +380,9 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
             <button class="btn" id="alTest">Send a test notification</button>
           </div>
           <div class="alrow" id="alLimits">
-            <label class="allimit">API cost in an hour over <span class="alfield"><input id="alCostH" type="number" min="0" step="0.5" inputmode="decimal"> $</span></label>
-            <label class="allimit">Tokens in an hour over <input id="alTokH" type="number" min="0" step="1000000" inputmode="numeric"></label>
-            <label class="allimit">API cost in 24 hours over <span class="alfield"><input id="alCostD" type="number" min="0" step="1" inputmode="decimal"> $</span></label>
+            <label class="allimit">API cost in an hour over <span class="alfield"><input id="alCostH" type="number" min="0" step="0.5" inputmode="decimal"><span class="u">$</span></span></label>
+            <label class="allimit">Tokens in an hour over <span class="alfield"><input id="alTokH" type="number" min="0" step="1000000" inputmode="numeric"></span></label>
+            <label class="allimit">API cost in 24 hours over <span class="alfield"><input id="alCostD" type="number" min="0" step="1" inputmode="decimal"><span class="u">$</span></span></label>
           </div>
           <div class="note">Watching checks the logs every 30 seconds, even while the window is minimized. A limit of 0 turns that alert off. Once an alert fires it stays quiet for a while and re-arms when usage falls back under half the limit.</div>
           <div class="note" id="alErr" role="alert" hidden></div>
@@ -1412,7 +1424,7 @@ function renderSessions() {
       const unpriced = a.cost === 0 && [...a.models.keys()].every((m) => !D.models[m].priced);
       const title = sessTitle(si);
       return `<tr data-sess="${si}" tabindex="-1" aria-selected="${state.sess === si}" aria-description="${esc((showTool ? SRC_NAME[s[0]] + ", " : "") + D.projects[s[2]])}" title="${esc((showTool ? SRC_NAME[s[0]] + "\n" : "") + D.projects[s[2]])}\n${esc(s[1])}">
-        <td class="wrap" title="${esc(title + "\n" + D.projects[s[2]] + "\n" + s[1])}">${esc(title)}</td>${showTool ? `<td class="xcol muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted cut" title="${esc(projName(s[2]))}">${esc(projName(s[2]))}</td><td class="xsm cut mdl" title="${esc(D.models[main].name)}">${esc(D.models[main].name)}</td><td class="xsm muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
+        <td class="wrap" title="${esc(title + "\n" + D.projects[s[2]] + "\n" + s[1])}">${esc(title)}</td>${showTool ? `<td class="xcol muted">${SRC_NAME[s[0]]}</td>` : ""}<td class="xcol muted cut" title="${esc(projName(s[2]))}">${esc(projName(s[2]))}</td><td class="xsm cut mdl" title="${esc(D.models[main].name)}"><i class="cdot" style="background:var(${colorOf[main]})"></i>${esc(D.models[main].name)}</td><td class="xsm muted">${dtLabel(D.sFirst[si] * 3600)}</td><td class="xcol muted">${dtLabel(D.sLast[si] * 3600)}</td>
         <td class="num">${fmtInt(a.reqs)}</td><td class="num${state.metric === "tokens" ? " db" : ""}"${state.metric === "tokens" ? dbar(a.tok, maxTok) : ""}>${fmtTok(a.tok)}</td><td class="num${state.metric === "cost" ? " db" : ""}"${state.metric === "cost" ? dbar(a.cost, maxCost) : ""}>${unpriced ? `<span class="muted" title="No public price for these models">n/a</span>` : usd(a.cost)}</td></tr>`;
     }).join("")}
   </tbody></table>${agg.size > state.sessCap ? `<div class="note">Showing ${fmtInt(state.sessCap)} of ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessMore">Show ${fmtInt(Math.min(300, agg.size - state.sessCap))} more</button>${state.sessCap > 300 ? ` <button class="btn" type="button" data-showall="sessTop">Show top 300</button>` : ""}</div>` : state.sessCap > 300 ? `<div class="note">Showing all ${fmtInt(agg.size)} sessions. <button class="btn" type="button" data-showall="sessTop">Show top 300</button></div>` : ""}`;
@@ -1980,11 +1992,12 @@ function applyAlertCfg() {
   err.hidden = !AL.err;
   if (AL.err) err.textContent = "The last alert could not pop a notification: " + AL.err;
 }
+const ICON_BELL = `<svg viewBox="0 0 16 16" width="26" height="26" aria-hidden="true"><path d="M8 1.6A4.4 4.4 0 0 0 3.6 6c0 3.5-1.1 4.6-1.8 5.2-.3.3 0 .8.4.8h11.6c.4 0 .7-.5.4-.8-.7-.6-1.8-1.7-1.8-5.2A4.4 4.4 0 0 0 8 1.6zM6.5 13a1.5 1.5 0 0 0 3 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 function renderAlertList() {
   const list = (AL && AL.list) || [];
   $("#alertList").innerHTML = list.length
     ? list.map((a) => `<div class="alitem"><div class="t"><span>${esc(a.title)}</span><span class="when">${esc(fmtClock(a.ts))}</span></div><div class="d">${esc(a.detail)}</div></div>`).join("")
-    : `<div class="empty">No alerts yet. They land here when a limit is crossed.</div>`;
+    : `<div class="empty alempty">${ICON_BELL}<div class="h">No alerts yet</div><div>They land here when a limit is crossed.</div></div>`;
 }
 for (const id of ["alOn", "alWatch", "alCostH", "alTokH", "alCostD"]) $("#" + id).addEventListener("change", () => {
   if (!window.ipc) return;

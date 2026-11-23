@@ -1571,9 +1571,10 @@ fn build_json(agg: &mut AggCache, files: &[Arc<FileData>], st: &ScanStats) -> To
         body.push_str(",\"name\":");
         esc(p.name, &mut body);
         let b = &p.base;
+        let off = p.off_peak.map_or((0.0, 0.0, 0.0), |r| (r.input, r.cache_read, r.output));
         let _ = write!(body,
-            ",\"in\":{},\"w5\":{},\"w1h\":{},\"cr\":{},\"out\":{},\"longOver\":{},\"lin\":{},\"lcr\":{},\"lout\":{},\"fin\":{},\"fout\":{}}}",
-            b.input, b.cache_w5m, b.cache_w1h, b.cache_read, b.output, p.long_over, p.long.input, p.long.cache_read, p.long.output, p.fast_in, p.fast_out
+            ",\"in\":{},\"w5\":{},\"w1h\":{},\"cr\":{},\"out\":{},\"longOver\":{},\"lin\":{},\"lcr\":{},\"lout\":{},\"fin\":{},\"fout\":{},\"offIn\":{},\"offCr\":{},\"offOut\":{}}}",
+            b.input, b.cache_w5m, b.cache_w1h, b.cache_read, b.output, p.long_over, p.long.input, p.long.cache_read, p.long.output, p.fast_in, p.fast_out, off.0, off.1, off.2
         );
     }
     // rows: [model, session, hour, input, output, cacheRead, cacheWrite, cost, reqs]

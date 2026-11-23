@@ -149,9 +149,24 @@ th[data-sort] { cursor: pointer; }
 td.wrap { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; }
 tbody tr { cursor: pointer; }
 tbody tr:hover td { background-color: var(--surface-2); }
-#priceTable tbody tr:hover td { background-color: transparent; }
-#priceTable th, #priceTable td { padding: 4px 6px; font-size: 12px; } /* the ten price columns fit a 1200px window */
-#priceTable td:first-child, #priceTable td.muted { white-space: normal; overflow-wrap: anywhere; } /* names, ids and prompt tiers wrap so the table keeps the 1200px fit */
+#priceTable tbody tr { cursor: default; }
+#priceTable tbody tr.pgroup:hover td { background-color: var(--surface-2); }
+#priceTable th, #priceTable td { padding: 4px 6px; font-size: 12px; } /* the price columns fit a 1200px window */
+#priceTable td:first-child, #priceTable td.muted { white-space: normal; overflow-wrap: anywhere; } /* names, ids and rate tiers wrap so the table keeps the 1200px fit */
+#priceTable thead tr:nth-child(2) th { top: var(--thh, 26px); } /* the "5 min / 1 hour" row sticks under its "Cache write" parent */
+#priceTable th.ghead { text-align: center; }
+#priceTable .pgroup td { background: var(--surface-2); color: var(--text-secondary); font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; padding: 7px 6px 4px; }
+#priceTable tr.used td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+#priceTable .pname { font-weight: 550; }
+#priceTable .tag { font-size: 10px; line-height: 1.6; color: var(--accent-text); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 0 7px; margin-left: 8px; white-space: nowrap; }
+#priceTable .pid { font-family: var(--mono); font-size: 11px; }
+#priceTable .na { color: var(--text-muted); }
+#priceTable .alt { white-space: nowrap; }
+#priceTable .alt > span { display: inline-block; min-width: 74px; color: var(--text-secondary); }
+.hd .pfind { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; color: var(--text-primary); font-size: 12px; width: 170px; }
+.hd .pfind::placeholder { color: var(--text-muted); }
+.pnotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px 28px; margin-top: 12px; font-size: 11px; color: var(--text-muted); }
+.pnotes b { color: var(--text-secondary); font-weight: 600; display: block; margin-bottom: 1px; }
 tbody tr[aria-selected="true"] td { background-color: color-mix(in srgb, var(--accent) 14%, var(--surface-1)); }
 tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 3px 0 0 var(--accent); } /* a bar too, so the state is not only a tint */
 td.db { background-image: linear-gradient(to right, color-mix(in srgb, var(--accent) 22%, transparent) var(--w), transparent var(--w)); background-repeat: no-repeat; background-size: calc(100% - 8px) 4px; background-position: 4px calc(100% - 3px); }
@@ -374,16 +389,16 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
 
   <section id="tab-prices" class="dash" role="tabpanel" aria-labelledby="tab-btn-prices" hidden>
     <div class="card prices">
-      <div class="hd"><h2 id="priceTitle">API list prices used for cost</h2><span class="sub" id="priceSub"></span></div>
+      <div class="hd"><h2 id="priceTitle">API list prices used for cost</h2><span class="sub" id="priceSub"></span><span class="spacer"></span><input class="pfind" id="priceFilter" type="search" placeholder="Filter models" aria-label="Filter models"></div>
       <div class="body">
         <div id="priceTable"></div>
-        <div class="note">
-          Cost is what the same tokens would cost on the pay-as-you-go API at list price. If you use a Claude or ChatGPT subscription you are not billed this amount.
-          Claude: cache writes are 1.25x input (5 minute) or 2x input (1 hour); Claude Haiku 5.5 uses the higher row when a prompt is over 100,000 tokens; fast mode uses the fast price with the same cache multipliers.
-          OpenAI: cached input uses the cached rate; prompts over 272,000 tokens use the long-context row. Codex priority or fast tiers are not detected and are priced at Standard.
-          Models with no public price (for example codex-auto-review) are counted in tokens but not in cost.
-          OpenCode, Pi and Qwen Code log every request, so their tokens land on the day they were used. Droid logs only a running total for each session, so its tokens are counted at the time that session was last saved.
-          DeepSeek is priced at its peak rate, or half that off-peak (01:00 to 04:00 and 06:00 to 10:00 UTC on weekdays are peak). DeepSeek makes Chinese public holidays off-peak; JTokens does not know the holidays, so a holiday weekday is priced as peak.
+        <div class="pnotes">
+          <div><b>What the cost is</b>What the same tokens would cost on the pay-as-you-go API at list price. If you use a Claude or ChatGPT subscription you are not billed this amount.</div>
+          <div><b>Claude</b>Cache writes are 1.25x input (5 minute) or 2x input (1 hour). Claude Haiku 5.5 uses the higher row when a prompt is over 100,000 tokens; fast mode uses the fast price with the same cache multipliers.</div>
+          <div><b>OpenAI</b>Cached input uses the cached rate; prompts over 272,000 tokens use the long-context row. Codex priority or fast tiers are not detected and are priced at Standard.</div>
+          <div><b>DeepSeek</b>Rows show the peak rate, off-peak is half (01:00 to 04:00 and 06:00 to 10:00 UTC on weekdays are peak). DeepSeek makes Chinese public holidays off-peak; JTokens does not know the holidays, so a holiday weekday is priced as peak.</div>
+          <div><b>No public price</b>Models with no public price (for example codex-auto-review) are counted in tokens but not in cost.</div>
+          <div><b>When tokens count</b>OpenCode, Pi and Qwen Code log every request, so their tokens land on the day they were used. Droid logs only a running total for each session, so its tokens are counted at the time that session was last saved.</div>
         </div>
       </div>
     </div>
@@ -1497,25 +1512,63 @@ ${fmtTok(a.tok)} tokens, ${a.priced ? usd(a.cost) : "no public price"}"><td clas
   rove("#projects", "tbody tr");
 }
 
-let pricesKey = null;
+let pricesKey = null, priceQuery = "";
+// provider group labels, in the order the scanner emits them; a prefix not listed lands in Other
+const PRICE_GROUPS = [[/^claude-/, "Anthropic"], [/^(gpt-|o\d)/, "OpenAI"], [/^deepseek-/, "DeepSeek"], [/^kimi-/, "Moonshot Kimi"], [/^grok-/, "xAI"], [/^glm-/, "Z.ai"], [/^minimax-/, "MiniMax"], [/^swe-/, "Cognition"]];
+const priceGroup = (id) => { for (const [re, n] of PRICE_GROUPS) if (re.test(id)) return n; return "Other"; };
 function renderPrices() {
   const pk = JSON.stringify([D.pricesChecked, D.priceSources, D.prices, D.models.map((m) => [m.id, m.priced])]);
   if (pk === pricesKey && $("#priceTable").innerHTML) return; pricesKey = pk;
-  $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`).join(" and ") + "."; $("#priceSub").title = $("#priceSub").textContent;
-  const usedIds = new Set(D.models.map((m) => m.id.replace(/\[.*$/, "").replace(/-\d{8}$/, "").toLowerCase()));
+  const hosts = D.priceSources.map((u) => `<a href="#" data-open="${esc(u)}">${esc(new URL(u).host)}</a>`);
+  const src = hosts.length > 4 ? hosts.slice(0, 4).join(", ") + ` and ${hosts.length - 4} more` : hosts.length > 1 ? hosts.slice(0, -1).join(", ") + " and " + hosts[hosts.length - 1] : hosts.join("") || "the providers";
+  $("#priceSub").innerHTML = `USD per million tokens. Checked ${esc(D.pricesChecked)} from ` + src + ".";
+  $("#priceSub").title = $("#priceSub").textContent;
+  const used = new Set(D.models.map((m) => findPrice(m.id)).filter(Boolean)); // findPrice applies the same match the cost does
   // each column uses the decimals its finest price needs, so the points line up
   const decOf = (v) => { if (!v) return 0; let d = 0; while (d < 4 && Math.abs(v * 10 ** d - Math.round(v * 10 ** d)) > 1e-9) d++; return d; };
   const colDec = {}; for (const k of ["in", "w5", "w1h", "cr", "out"]) colDec[k] = Math.max(2, ...D.prices.map((p) => decOf(p[k])));
-  const money = (v, k) => v ? "$" + v.toFixed(k ? colDec[k] : Math.max(2, decOf(v))) : k ? `<span class="muted">n/a</span>` : "";
-  $("#priceTable").innerHTML = `<table aria-labelledby="priceTitle"><thead><tr><th>Model</th><th>In your logs</th><th>ID</th><th class="num">Input</th><th class="num">Cache write 5m</th><th class="num">Cache write 1h</th><th class="num">Cache read</th><th class="num">Output</th><th>Long prompt</th><th>Fast mode</th></tr></thead><tbody>
-    ${D.prices.map((p) => `<tr style="cursor:default"><td>${esc(p.name)}</td><td>${usedIds.has(p.id.toLowerCase()) ? "Yes" : ""}</td><td class="muted" style="font-family:var(--mono)">${esc(p.id)}</td>
-      <td class="num">${money(p.in, "in")}</td><td class="num">${money(p.w5, "w5")}</td><td class="num">${money(p.w1h, "w1h")}</td><td class="num">${money(p.cr, "cr")}</td><td class="num">${money(p.out, "out")}</td>
-      <td class="muted">${p.longOver ? `over ${fmtTok(p.longOver)}: ${money(p.lin)} in, ${money(p.lcr)} cached, ${money(p.lout)} out` : ""}</td>
-      <td class="muted">${p.fin ? `${money(p.fin)} in, ${money(p.fout)} out` : ""}</td>
-      </tr>`).join("")}
-  </tbody></table>
+  const money = (v, k) => v ? "$" + v.toFixed(k ? colDec[k] : Math.max(2, decOf(v))) : k ? `<span class="na">—</span>` : "";
+  const alt = (label, parts) => `<div class="alt"><span>${label}</span>${parts}</div>`;
+  let rows = "", group = null;
+  for (const p of D.prices) {
+    const g = priceGroup(p.id);
+    if (g !== group) { group = g; rows += `<tr class="pgroup"><td colspan="8">${esc(g)}</td></tr>`; }
+    const more = [];
+    if (p.longOver) more.push(alt(`over ${fmtTok(p.longOver)}`, `${money(p.lin)} in · ${money(p.lcr)} read · ${money(p.lout)} out`));
+    if (p.fin) more.push(alt("fast mode", `${money(p.fin)} in · ${money(p.fout)} out`));
+    if (p.offIn) more.push(alt("off-peak", `${money(p.offIn)} in · ${money(p.offCr)} read · ${money(p.offOut)} out`));
+    const inLogs = used.has(p);
+    rows += `<tr${inLogs ? ` class="used"` : ""} data-s="${esc((g + " " + p.name + " " + p.id).toLowerCase())}"><td><span class="pname">${esc(p.name)}</span>${inLogs ? ` <span class="tag">in your logs</span>` : ""}</td><td class="muted pid">${esc(p.id)}</td>
+      <td class="num">${money(p.in, "in")}</td><td class="num">${money(p.out, "out")}</td><td class="num">${money(p.cr, "cr")}</td><td class="num">${money(p.w5, "w5")}</td><td class="num">${money(p.w1h, "w1h")}</td>
+      <td class="muted">${more.join("") || `<span class="na">—</span>`}</td></tr>`;
+  }
+  $("#priceTable").innerHTML = `<table aria-labelledby="priceTitle"><thead><tr><th rowspan="2">Model</th><th rowspan="2">ID</th><th class="num" rowspan="2">Input</th><th class="num" rowspan="2">Output</th><th class="num" rowspan="2">Cache read</th><th class="ghead" colspan="2">Cache write</th><th rowspan="2">Other rates</th></tr><tr><th class="num">5 min</th><th class="num">1 hour</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="empty" id="priceEmpty" hidden>No models match the filter.</div>
   ${D.models.filter((m) => !m.priced).length ? `<div class="note">In your logs with no public API price: ${D.models.filter((m) => !m.priced).map((m) => esc(m.id)).join(", ")}.</div>` : ""}`;
+  stickPriceHead();
+  applyPriceFilter();
 }
+// the "5 min / 1 hour" row sticks just under the "Cache write" row; measure it while the tab shows
+function stickPriceHead() {
+  const h1 = $("#priceTable thead tr");
+  if (h1) $("#priceTable").style.setProperty("--thh", h1.getBoundingClientRect().height + "px");
+}
+// the filter hides rows and the provider groups it empties; it survives a redraw
+function applyPriceFilter() {
+  const tb = $("#priceTable tbody"), emp = $("#priceEmpty");
+  if (!tb) return;
+  const q = priceQuery.trim().toLowerCase();
+  let groupRow = null, groupAny = false, shown = 0;
+  for (const tr of tb.children) {
+    if (tr.classList.contains("pgroup")) { if (groupRow) groupRow.hidden = !groupAny; groupRow = tr; groupAny = false; continue; }
+    const show = !q || tr.dataset.s.includes(q);
+    tr.hidden = !show;
+    if (show) { groupAny = true; shown++; }
+  }
+  if (groupRow) groupRow.hidden = !groupAny;
+  if (emp) emp.hidden = shown > 0;
+}
+document.addEventListener("input", (e) => { if (e.target.id === "priceFilter") { priceQuery = e.target.value; applyPriceFilter(); } });
 
 // ---------- interaction
 // one item per chart or list is in the tab order: the last focused, else the selected, else the first
@@ -1614,6 +1667,7 @@ document.addEventListener("click", (e) => {
     $("#tab-overview").hidden = tab.dataset.tab !== "overview";
     $("#tab-alerts").hidden = tab.dataset.tab !== "alerts";
     $("#tab-prices").hidden = tab.dataset.tab !== "prices";
+    if (tab.dataset.tab === "prices") stickPriceHead();
     return;
   }
   const open = t.closest("[data-open]");

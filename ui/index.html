@@ -99,10 +99,38 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .stats .kpi:nth-child(n+3) { border-top: 1px solid var(--grid); }
 .stats .kpi .v { font-size: 22px; }
 /* the board scrolls with the page, so charts get real height instead of sharing one screen */
-.board { flex: none; display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: clamp(380px, 52vh, 560px) clamp(300px, 38vh, 420px) clamp(340px, 46vh, 520px) 250px; }
+.board { flex: none; display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: clamp(380px, 52vh, 560px) clamp(320px, 40vh, 440px) clamp(340px, 46vh, 520px) 420px; }
 #c-daily { grid-column: span 3; }
 #c-hourly { grid-column: span 2; }
-#c-sessions, #c-limits { grid-column: 1 / -1; }
+#c-sessions { grid-column: span 3; }
+#c-limits { grid-column: 1 / -1; }
+/* By tool: cost and tokens side by side for each harness */
+.trow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 7px 6px; border-radius: 6px; cursor: pointer; align-items: center; }
+.trow:hover { background: var(--surface-2); }
+.trow[aria-pressed="true"] { background: var(--surface-2); outline: 1px solid var(--border); }
+.trow .tn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trow .tv { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.trow .tv span { color: var(--text-muted); font-size: 11px; margin-left: 6px; }
+.trow .tb { grid-column: 1 / -1; display: grid; grid-template-columns: 52px minmax(0, 1fr) 40px; gap: 3px 8px; align-items: center; font-size: 11px; color: var(--text-muted); }
+.trow .tb .track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.trow .tb .track b { display: block; height: 100%; border-radius: 3px; }
+.trow .tb .pc2 { text-align: right; font-variant-numeric: tabular-nums; }
+.trow .tm2 { grid-column: 1 / -1; color: var(--text-muted); font-size: 11px; }
+/* plan limits: one gauge block per provider above the chart */
+.gauges { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin: 0 0 10px; }
+.gauge { background: var(--surface-2); border-radius: 6px; padding: 7px 10px; min-width: 0; }
+.gauge .gn { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gauge .gn i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.gauge .gw { display: grid; grid-template-columns: 44px minmax(0, 1fr) 36px; gap: 8px; align-items: center; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.gauge .gw .track { height: 6px; background: var(--surface-1); border-radius: 3px; overflow: hidden; }
+.gauge .gw .track b { display: block; height: 100%; border-radius: 3px; }
+.gauge .gw .p { text-align: right; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.gauge .gw .p.hi { color: var(--s8); font-weight: 600; }
+.gauge .gm { font-size: 11px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gauge .gm.warn { color: var(--s4); }
+.gauge .gm.warn::before { content: "⚠ "; }
+.hero .area { cursor: crosshair; }
+.hero .hov { position: relative; }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
 /* narrow cards drop the hint so the title and buttons fit */
 @container (max-width: 240px) { .card .hd .sub { display: none; } }
@@ -295,7 +323,8 @@ html:has(body.has-max) { overflow: hidden; }
 .card.max .body { overscroll-behavior: contain; }
 .kpi .spark { position: absolute; right: 12px; top: 22px; }
 .kpi .dl { color: var(--text-secondary); font-weight: 600; }
-.avg, .avg-l, .vl, .callout, .selected-band { pointer-events: none; }
+.avg, .avg-l, .vl, .callout, .selected-band, .ma { pointer-events: none; }
+svg text.halo { paint-order: stroke; stroke: var(--surface-1); stroke-width: 4px; stroke-linejoin: round; }
 .card .body :focus-visible, .chart :focus-visible { outline-offset: -2px; }
 svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600; paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; stroke-linejoin: round; }
 #tip .tsep { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
@@ -381,12 +410,16 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="legend" id="trendLegend" hidden></div>
         <div class="chart" id="modelTrend" hidden></div>
       </div>
+      <div class="card" id="c-tools">
+        <div class="hd"><h2>By tool</h2><span class="sub" id="toolSub">Click to show one tool</span></div>
+        <div class="body" id="tools"></div>
+      </div>
       <div class="card" id="c-hourly">
         <div class="hd"><h2 id="hourTitle">By hour</h2><span class="sub" id="hourSub">Local time</span><span class="spacer"></span>
           <div class="seg mini" id="hourMode" role="group" aria-label="Hour chart view"><button data-v="hours" aria-pressed="true">Hours</button><button data-v="week" aria-pressed="false">Week</button></div></div>
         <div class="chart" id="hourly"></div>
       </div>
-      <div class="card">
+      <div class="card" id="c-mix">
         <div class="hd"><h2>Token mix</h2><span class="sub">Where the tokens and the cost went</span></div>
         <div class="body" id="mix"></div>
       </div>
@@ -631,7 +664,7 @@ function selfCheck() {
     rows: D.rows.length, models: D.models.length, sessions: D.sessions.length,
     dailyBars: document.querySelectorAll("#daily .hit").length,
     limBars: document.querySelectorAll("#limits .hit").length,
-    limStatus: [...document.querySelectorAll("#limLegend > span")].map((s) => s.textContent.trim()).join("|"),
+    limStatus: [...document.querySelectorAll("#limLegend > *")].map((s) => [...s.querySelectorAll(".gn, .gw > span, .gm")].map((x) => x.textContent.trim()).join(" ") || s.textContent.trim()).join("|"),
     modelRows: document.querySelectorAll("#models .hbar").length,
     sessionRows: document.querySelectorAll("#sessions tbody tr").length,
     kpiCost: document.querySelector("#kpis .v") ? document.querySelector("#kpis .v").textContent : null,
@@ -681,7 +714,7 @@ function rangeStart() {
 }
 function passes(r, opts = {}) {
   const m = D.models[r[0]];
-  if (state.src !== "all" && m.src !== +state.src) return false;
+  if (!opts.ignoreSrc && state.src !== "all" && m.src !== +state.src) return false;
   if (!opts.ignoreModel && state.model !== null && r[0] !== state.model) return false;
   if (!opts.ignoreSess && state.sess !== null && r[1] !== state.sess) return false;
   if (!opts.ignoreProj && state.proj !== null && D.sessions[r[1]][2] !== state.proj) return false;
@@ -698,7 +731,7 @@ const val = (r) => state.metric === "cost" ? r[7] : r[3] + r[4] + r[5] + r[6];
 // selector for the focused item, so a redraw (Live refresh, filter) can put focus back
 function focusKey(el) {
   if (!el || !el.getAttribute) return null;
-  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi", "data-metric", "data-showall", "data-more", "data-legmore"]) {
+  for (const a of ["data-sess", "data-proj", "data-model", "data-day", "data-sort", "data-hour", "data-i", "data-clear", "data-kpi", "data-metric", "data-tool", "data-showall", "data-more", "data-legmore"]) {
     if (el.hasAttribute(a)) { const host = el.closest("[id]"); return host ? `#${host.id} [${a}="${el.getAttribute(a)}"]` : null; }
   }
   return null;
@@ -725,7 +758,7 @@ function render() {
   const base = [state.src, state.range, state.metric, state.day, state.model, state.proj, state.sess];
   // each list ignores its own selection, so clicking a row keeps the list where it was
   const own = { sessions: 6, projects: 5, models: 4 };
-  for (const [f, sel] of [[renderFilters, "#filters"], [renderKpis, "#kpis"], [renderDaily, "#daily"], [renderModels, () => state.modelMode === "trend" ? "#modelTrend" : "#models"], [renderHourly, "#hourly"], [renderMix, "#mix"], [renderSessions, "#sessions"], [renderProjects, () => state.projMode === "map" ? "#projMap" : "#projects"], [renderLimits, "#limits"]]) {
+  for (const [f, sel] of [[renderFilters, "#filters"], [renderKpis, "#kpis"], [renderDaily, "#daily"], [renderModels, () => state.modelMode === "trend" ? "#modelTrend" : "#models"], [renderHourly, "#hourly"], [renderTools, "#tools"], [renderMix, "#mix"], [renderSessions, "#sessions"], [renderProjects, () => state.projMode === "map" ? "#projMap" : "#projects"], [renderLimits, "#limits"]]) {
     try { f(); } catch (err) {
       if (window.ipc) window.ipc.postMessage("log:error " + f.name + ": " + (err && err.message));
       if (sel) $(typeof sel === "function" ? sel() : sel).innerHTML = `<div class="empty">Could not draw this ${sel === "#kpis" ? "summary" : sel === "#filters" ? "filter line" : "card"}. Press Refresh to try again.</div>`;
@@ -853,14 +886,24 @@ function renderKpis() {
   // all time, under the same tool, model, project and session filters
   let allCost = 0, allTok = 0, allFirst = null; const allDays = new Set();
   for (const r of D.rows) { if (!passes(r, { allTime: true })) continue; allCost += r[7]; allTok += r[3] + r[4] + r[5] + r[6]; allDays.add(r[9]); if (!allFirst || r[9] < allFirst) allFirst = r[9]; }
-  const hs = heroSeries();
+  const hs = heroSeries(); HS = hs;
+  // this calendar month so far, and where it ends at the same pace (from the second day on)
+  const mNow = new Date(), mStart = new Date(mNow.getFullYear(), mNow.getMonth(), 1), mKey = dayKey(mStart);
+  const mDays = new Date(mNow.getFullYear(), mNow.getMonth() + 1, 0).getDate(), mEl = (mNow - mStart) / 86400000;
+  let mCost = 0, mTok = 0; for (const r of D.rows) if (r[9] >= mKey && passes(r, { allTime: true })) { mCost += r[7]; mTok += r[3] + r[4] + r[5] + r[6]; }
+  const pace = (v) => mEl >= 2 ? v / mEl * mDays : null;
   const heroes = [
-    ["cost", "API cost", fmtUsd(cost), delta(cost - costN, prev && prev.cost, fmtUsd, state.day ? spanLabel() : state.range ? `last ${state.range === 1 ? "day" : state.range + " days"}` : "all time", true), allCost, fmtUsd, hs.cost],
-    ["tokens", "Tokens", fmtTok(tok), delta(tok - tokN, prev && prev.tok, fmtTok, "input, output and cache"), allTok, fmtTok, hs.tok],
+    ["cost", "API cost", fmtUsd(cost), delta(cost - costN, prev && prev.cost, fmtUsd, state.day ? spanLabel() : state.range ? `last ${state.range === 1 ? "day" : state.range + " days"}` : "all time", true), allCost, fmtUsd, hs.cost, mCost],
+    ["tokens", "Tokens", fmtTok(tok), delta(tok - tokN, prev && prev.tok, fmtTok, "input, output and cache"), allTok, fmtTok, hs.tok, mTok],
   ];
-  const heroHtml = ([k, l, v, s, all, fmt, series]) => {
-    const on = state.metric === k, pk = series.peak;
-    const facts = [state.range || state.day ? `<span>All time <b>${fmt(all)}</b></span>` : "", allFirst ? `<span>since <b>${dayLabel(allFirst)}</b></span>` : "", allDays.size ? `<span>avg <b>${fmt(all / allDays.size)}</b> per active day</span>` : "", pk ? `<span>peak ${hs.unit} <b>${fmt(pk.v)}</b> ${esc(pk.label)}</span>` : ""].filter(Boolean).join("");
+  const monthName = mStart.toLocaleString(undefined, { month: "long" });
+  const heroHtml = ([k, l, v, s, all, fmt, series, mv]) => {
+    const on = state.metric === k, pk = series.peak, pc = pace(mv);
+    const facts = [
+      allFirst ? `<span>${state.range || state.day ? `All time <b>${fmt(all)}</b> since` : "Since"} <b>${dayLabel(allFirst)}</b></span>` : "",
+      allDays.size ? `<span>avg <b>${fmt(all / allDays.size)}</b> per active day</span>` : "",
+      mv > 0 ? `<span>${esc(monthName)} <b>${fmt(mv)}</b>${pc ? `, on pace for <b>${fmt(pc)}</b>` : ""}</span>` : "",
+      pk ? `<span>peak ${hs.unit} <b>${fmt(pk.v)}</b> ${esc(pk.label)}</span>` : ""].filter(Boolean).join("");
     return `<div class="kpi hero" role="button" tabindex="0" data-metric="${k}" aria-pressed="${on}" title="Show ${l.toLowerCase()} in the charts"><div class="top"><span class="l">${l}</span><span class="rg">${esc(rangeName)}</span></div><div class="v">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div><div class="at">${facts}</div>${areaChart(series.vals, on)}<div class="ax" aria-hidden="true"><span>${esc(hs.from)}</span><span>${esc(hs.to)}</span></div></div>`;
   };
   $("#kpis").innerHTML = heroes.map(heroHtml).join("") + `<div class="stats">` + tiles.map(([l, v, s, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="cache" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div></div>`).join("") + `</div>`;
@@ -890,6 +933,7 @@ function heroSeries() {
     for (const r of D.rows) if (r[9] === oneDay && passes(r) && r[10] < n) { c[r[10]] += r[7]; t[r[10]] += r[3] + r[4] + r[5] + r[6]; }
     const lab = (h) => `${dayLabel(oneDay)} ${pad(h)}:00`;
     out.cost.vals = c; out.tok.vals = t; out.from = "12a"; out.to = oneDay === tk ? "Now" : "11p";
+    out.labels = c.map((_, h) => lab(h) + (oneDay === tk && h === n - 1 ? " so far" : ""));
     for (const [k, v] of [["cost", c], ["tok", t]]) { const m = Math.max(...v); if (m > 0) out[k].peak = { v: m, label: lab(v.indexOf(m)) }; }
     return out;
   }
@@ -906,9 +950,28 @@ function heroSeries() {
     c[i] += r[7]; t[i] += tt; dc.set(r[9], (dc.get(r[9]) || 0) + r[7]); dt.set(r[9], (dt.get(r[9]) || 0) + tt);
   }
   out.unit = "day"; out.cost.vals = c; out.tok.vals = t;
+  out.labels = c.map((_, i) => (step === 1 ? dayLabel(keys[i]) : "Week of " + dayLabel(keys[i * step])) + (i === nb - 1 && to === tk ? " so far" : ""));
   out.from = dayLabel(keys[0]); out.to = to === tk ? "Today" : dayLabel(to);
   for (const [k, mp] of [["cost", dc], ["tok", dt]]) { let best = null; for (const [d, v] of mp) if (v > 0 && (!best || v > best.v)) best = { v, label: dayLabel(d) }; out[k].peak = best; }
   return out;
+}
+// hovering a big tile's trend shows that hour, day or week, with a marker line
+let HS = null;
+function heroTip(e, svg) {
+  const k = svg.closest("[data-metric]").dataset.metric, s = HS && (k === "cost" ? HS.cost : HS.tok);
+  if (!s || s.vals.length < 2) { tip.style.display = "none"; tipKey = null; return; }
+  const r = svg.getBoundingClientRect(), n = s.vals.length, i = Math.max(0, Math.min(n - 1, Math.round((e.clientX - r.left) / r.width * (n - 1))));
+  let mk = svg.querySelector(".mk");
+  if (!mk) { mk = document.createElementNS("http://www.w3.org/2000/svg", "line"); mk.setAttribute("class", "mk"); mk.setAttribute("y1", "0"); mk.setAttribute("y2", "70"); mk.setAttribute("stroke", "var(--text-secondary)"); mk.setAttribute("stroke-width", "1"); mk.setAttribute("vector-effect", "non-scaling-stroke"); mk.setAttribute("stroke-dasharray", "3 3"); svg.appendChild(mk); }
+  const x = (i / (n - 1) * 1000).toFixed(1); mk.setAttribute("x1", x); mk.setAttribute("x2", x);
+  const key = "hero:" + k + ":" + i;
+  if (tipKey !== key) { tip.innerHTML = `<div class="h">${esc(HS.labels[i] || "")}</div><div class="r"><span>${k === "cost" ? "API cost" : "Tokens"}</span><span>${k === "cost" ? colUsd(s.vals[i]) : fmtTok(s.vals[i])}</span></div><div class="r"><span>${k === "cost" ? "Tokens" : "API cost"}</span><span>${k === "cost" ? fmtTok(HS.tok.vals[i]) : colUsd(HS.cost.vals[i])}</span></div>`; tipKey = key; }
+  tip.style.display = "block";
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let tx = e.clientX + 14, ty = e.clientY - th - 10;
+  if (tx + tw > innerWidth - 8) tx = e.clientX - tw - 14;
+  if (ty < 8) ty = e.clientY + 16;
+  tip.style.left = Math.max(8, tx) + "px"; tip.style.top = ty + "px";
 }
 // a filled trend line that stretches to the tile's width
 function areaChart(vals, on) {
@@ -1043,6 +1106,12 @@ function renderDaily() {
     // average per bar over the whole range, idle days included; the last bar holds today, which is not over, so it is left out
     const full = n - 1;
     avg = full ? totals.slice(0, full).reduce((a, b) => a + b, 0) / full : 0;
+    // trailing 7-day average, idle days counted as zero; today is not over, so the line stops before it
+    if (step === 1 && n >= 10) {
+      const pts = [];
+      for (let i = 6; i < full; i++) { let a = 0; for (let j = i - 6; j <= i; j++) a += totals[j]; pts.push(`${(L + i * slot + slot / 2).toFixed(1)},${y(a / 7).toFixed(1)}`); }
+      if (pts.length > 1) { s += `<polyline class="ma" points="${pts.join(" ")}" fill="none" stroke="var(--text-primary)" stroke-width="2" stroke-opacity=".75" stroke-linejoin="round" stroke-linecap="round"/>`; $("#dailyLegend").insertAdjacentHTML("beforeend", `<span><i style="background:var(--text-primary);height:3px;opacity:.75"></i>7-day average</span>`); }
+    }
     if (n > 1 && full) s += `<line x1="${L}" x2="${W - R}" y1="${y(avg)}" y2="${y(avg)}" class="avg"/><text x="${W - R + 6}" y="${y(avg) + 11 > H - 20 ? y(avg) - 17 : y(avg) - 2}" class="avg-l">${state.day ? "range avg" : "avg"} ${fmtVal(avg)}<tspan x="${W - R + 6}" dy="13" class="avg-s">per ${unit}</tspan></text>`;
   }
   s += `</svg>`;
@@ -1262,24 +1331,32 @@ function renderHourly() {
   const max = Math.max(...vals);
   const hourVal = (h) => !vals[h] && unpH[h] ? `no priced usage, ${fmtTok(unpH[h])} unpriced tokens` : tipVal(vals[h]);
   if (max <= 0) { $("#hourly").innerHTML = `<div class="empty">${unpH.some(Boolean) ? "No priced usage here. Switch to Tokens to see it." : noUsage({}, "No usage.")}</div>`; return; }
-  const { W, H } = boxOf("#hourly"), B = 22, T = 8, plotH = H - B - T;
+  const { W, H } = boxOf("#hourly"), B = 22, T = 24, plotH = H - B - T;
   const ticks = niceTicks(max, plotH > 360 ? 5 : 3), top = ticks[ticks.length - 1], L = axisL(ticks), plotW = W - L - 4;
   const slot = plotW / 24, bw = slot * 0.7, every = slot < 13 ? 6 : slot > 40 ? 1 : slot > 24 ? 2 : 3;
   const y = (v) => T + plotH - v / top * plotH;
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${state.metric === "cost" ? "API cost" : "Tokens"} by hour of day. Arrow keys move between hours.">`;
   for (const t of ticks) s += `<line x1="${L}" x2="${W - 4}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${tickFmt(ticks, t)}</text>`;
-  const tk = dayKey(new Date()), nowH = new Date().getHours();
+  const tk = dayKey(new Date()), nowH = new Date().getHours(), peakH = vals.indexOf(max);
+  let avgLabel = ""; // drawn after the bars so it reads on top of them
+  { // average per hour of the day, and a label on the busiest hour
+    const av = vals.reduce((a, b) => a + b, 0) / 24;
+    s += `<line x1="${L}" x2="${W - 4}" y1="${y(av)}" y2="${y(av)}" class="avg"/>`;
+    avgLabel = `<text x="${L + 6}" y="${y(av) - 5}" class="avg-l halo">avg ${fmtVal(av)} per hour</text>`;
+    const px = L + peakH * slot + slot / 2, txt = `Peak ${hourName(peakH)} · ${fmtVal(max)}`, tw = 6.6 * txt.length;
+    s += `<text x="${Math.min(Math.max(px, L + tw / 2), W - 4 - tw / 2)}" y="${y(max) - 6 < 12 ? 12 : y(max) - 6}" text-anchor="middle" class="callout">${txt}</text>`;
+  }
   const onlyToday = (state.range === 1 && !state.day) || (!!state.day && state.day[0] === tk && state.day[1] === tk);
   vals.forEach((v, h) => {
     const x = L + h * slot + (slot - bw) / 2, hh = y(0) - y(v);
     if (onlyToday && h > nowH) { if (h % every === 0 || (h === 23 && (23 % every) * slot >= 26)) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`; return; } // not yet
-    const part = onlyToday && h === nowH ? ' fill-opacity="0.6"' : ""; // this hour is not over
+    const part = onlyToday && h === nowH ? ' fill-opacity="0.45"' : h === peakH ? "" : ' fill-opacity="0.62"'; // this hour is not over; the busiest hour stands out
     if (hh > 0) s += hh > 4 ? `<path class="bar" d="${roundTop(x, y(v), bw, hh, 3)}" fill="var(--accent)"${part}/>` : `<rect class="bar" x="${x}" y="${y(v)}" width="${bw}" height="${hh}" fill="var(--accent)"${part}/>`;
     else if (unpH[h]) s += `<rect x="${x}" y="${y(0) - 2}" width="${bw}" height="2" fill="var(--text-muted)"/>`; // a mark, so the hour does not look empty
     if (h % every === 0 || (h === 23 && (23 % every) * slot >= 26)) s += `<text x="${L + h * slot + slot / 2}" y="${H - 6}" text-anchor="middle">${hourName(h)}</text>`;
     s += `<rect class="hit" data-hour="${h}" x="${L + h * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${hourName(h)}, ${pad(h)}:00 to ${pad(h)}:59: ${hourVal(h)}${onlyToday && h === nowH ? " so far" : ""}"/>`;
   });
-  s += `</svg>`;
+  s += avgLabel + `</svg>`;
   $("#hourly").innerHTML = s;
   if (!roveAt.hourly || (!(vals[+roveAt.hourly.replace(/\D/g, "")] > 0) && !(document.activeElement && document.activeElement.closest && document.activeElement.closest("#hourly")))) { const top = vals.indexOf(Math.max(...vals)); if (vals[top] > 0) roveAt.hourly = `[data-hour="${top}"]`; }
   rove("#hourly", ".hit");
@@ -1336,6 +1413,37 @@ function renderHeat() {
   };
 }
 
+// cost and tokens per harness; every tool stays listed so another can be picked
+function renderTools() {
+  const agg = D.harnesses.map(() => ({ cost: 0, tok: 0, reqs: 0, sess: new Set(), unp: 0 }));
+  // a picked model or session belongs to one tool; the list follows it, other filters still apply
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreSrc: true })) continue;
+    const a = agg[D.models[r[0]].src], t = r[3] + r[4] + r[5] + r[6];
+    a.cost += r[7]; a.tok += t; a.reqs += r[8]; a.sess.add(r[1]); if (!D.models[r[0]].priced) a.unp += t;
+  }
+  const list = agg.map((a, i) => [i, a]).filter(([, a]) => a.tok > 0 || a.reqs > 0);
+  if (!list.length) { $("#tools").innerHTML = `<div class="empty">No usage in this range.</div>`; return; }
+  const key = state.metric === "cost" ? (a) => a.cost : (a) => a.tok;
+  list.sort((p, q) => key(q[1]) - key(p[1]) || q[1].tok - p[1].tok);
+  const sc = list.reduce((s, [, a]) => s + a.cost, 0), st = list.reduce((s, [, a]) => s + a.tok, 0);
+  const mc = Math.max(...list.map(([, a]) => a.cost), 1e-9), mt = Math.max(...list.map(([, a]) => a.tok), 1);
+  const pc = (v, s) => !s ? "–" : v && v / s < 0.001 ? "<0.1%" : (v / s * 100).toFixed(v / s >= 0.1 ? 0 : 1) + "%";
+  const costOn = state.metric === "cost";
+  $("#tools").innerHTML = list.map(([i, a]) => {
+    const on = state.src === String(i);
+    const big = costOn ? colUsd(a.cost) : fmtTok(a.tok);
+    return `<div class="trow" data-tool="${i}" role="button" tabindex="-1" aria-pressed="${on}" aria-label="${esc(SRC_NAME[i])}: ${colUsd(a.cost)} API cost, ${fmtTok(a.tok)} tokens">
+      <div class="tn">${esc(SRC_NAME[i])}</div><div class="tv">${big}<span>${pc(key(a), costOn ? sc : st)}</span></div>
+      <div class="tb"><span>API cost</span><div class="track"><b style="width:${(a.cost / mc * 100).toFixed(2)}%;background:var(--accent);opacity:${costOn ? 1 : 0.45}"></b></div><span class="pc2">${pc(a.cost, sc)}</span>
+      <span>Tokens</span><div class="track"><b style="width:${(a.tok / mt * 100).toFixed(2)}%;background:var(--accent);opacity:${costOn ? 0.45 : 1}"></b></div><span class="pc2">${pc(a.tok, st)}</span></div>
+      <div class="tm2">${costOn ? fmtTok(a.tok) + " tokens" : colUsd(a.cost)}, ${fmtInt(a.reqs)} requests, ${fmtInt(a.sess.size)} session${a.sess.size === 1 ? "" : "s"}${a.unp && costOn ? `, ${fmtTok(a.unp)} unpriced` : ""}</div>
+    </div>`;
+  }).join("");
+  $("#toolSub").textContent = state.src === "all" ? "Click to show one tool" : "Click again to show all";
+  rove("#tools", ".trow");
+}
+
 function renderMix() {
   const t = [0, 0, 0, 0];
   for (const r of D.rows) if (passes(r)) { t[0] += r[3]; t[1] += r[4]; t[2] += r[5]; t[3] += r[6]; }
@@ -1385,14 +1493,17 @@ function renderLimits() {
   const latest = (lim && lim.latest) || [];
   const nameOf = new Map(latest.map((e) => [e.src, e.n]));
   const series = ((lim && lim.series) || []).filter((s) => s.pts && s.pts.length > 0);
+  // one gauge per provider: a bar per plan window, red from 80% up; problems get a warning line
+  $("#limLegend").className = latest.length ? "gauges" : "legend";
   $("#limLegend").innerHTML = latest.map((e) => {
     const c = limColor(e.src);
     if (e.st === "ok") {
-      const ws = [...e.w].sort((a, b) => (LIM_WIN_ORDER[a[0]] ?? 9) - (LIM_WIN_ORDER[b[0]] ?? 9)).map(([k, p]) => `${LIM_WIN_NAME[k] || k} ${Math.round(p)}%`).join(" · ");
-      return `<span${e.m ? ` title="${esc(e.m)}"` : ""}><i style="background:${c}"></i><em>${esc(e.n)} ${ws}</em></span>`;
+      const ws = [...e.w].sort((a, b) => (LIM_WIN_ORDER[a[0]] ?? 9) - (LIM_WIN_ORDER[b[0]] ?? 9));
+      return `<div class="gauge"${e.m ? ` title="${esc(e.m)}"` : ""}><div class="gn"><i style="background:${c}"></i>${esc(e.n)}</div>${ws.map(([k, p]) => { const v = Math.max(0, Math.min(100, p)), hi = p >= 80; return `<div class="gw" role="img" aria-label="${esc(e.n)} ${LIM_WIN_NAME[k] || k} window ${Math.round(p)}% used"><span>${LIM_WIN_NAME[k] || k}</span><div class="track"><b style="width:${v.toFixed(1)}%;background:${hi ? "var(--s8)" : c}"></b></div><span class="p${hi ? " hi" : ""}">${Math.round(p)}%</span></div>`; }).join("") || `<div class="gm">No plan windows reported</div>`}</div>`;
     }
-    const label = e.st === "wait" ? "checking soon" : e.st === "expired" ? (e.m || "sign in again") : (e.m || (e.st === "off" ? "not signed in" : "check failed"));
-    return `<span class="off" title="${esc(e.n + ": " + label)}"><i style="background:${c}"></i><em>${esc(e.n)} <span class="muted">${esc(label)}</span></em></span>`;
+    const label = e.st === "wait" ? "Checking soon" : e.st === "expired" ? (e.m || "Sign in again") : (e.m || (e.st === "off" ? "Not signed in" : "Check failed"));
+    const warn = e.st === "expired" || e.st === "error";
+    return `<div class="gauge" title="${esc(e.n + ": " + label)}"><div class="gn"><i style="background:${c}"></i>${esc(e.n)}</div><div class="gm${warn ? " warn" : ""}">${esc(label)}</div></div>`;
   }).join("");
   const nowSec = Math.floor(Date.now() / 1000);
   // the same span the daily chart covers, widened only to reach the first sample
@@ -1729,6 +1840,9 @@ function moveTip(e) {
   if (tipKey === "more" && tipFromFocus) { if (!(e.target.closest && e.target.closest(".hit"))) return; tipFromFocus = false; } // the keyboard-opened name list stays until the mouse uses a chart
   const hit = e.target.closest && e.target.closest(".hit");
   tipFromFocus = false;
+  const area = !hit && e.target.closest && e.target.closest(".hero .area");
+  document.querySelectorAll(".hero .mk").forEach((m) => { if (!area || m.ownerSVGElement !== area) m.remove(); });
+  if (area) return heroTip(e, area);
   if (!hit) { tip.style.display = "none"; tipKey = null; return; }
   const svg = hit.ownerSVGElement;
   const k = hit.dataset.i !== undefined ? +hit.dataset.i : +hit.dataset.hour;
@@ -1798,6 +1912,12 @@ document.addEventListener("click", (e) => {
     $("#tab-prices").hidden = tab.dataset.tab !== "prices";
     return;
   }
+  const tool = t.closest("[data-tool]");
+  if (tool) {
+    const v = state.src === tool.dataset.tool ? "all" : tool.dataset.tool, b = $(`#srcSeg button[data-v="${v}"]`);
+    if (b) b.click();
+    return refocus(e, `#tools [data-tool="${tool.dataset.tool}"]`);
+  }
   const hero = t.closest("[data-metric]");
   if (hero) {
     const k = hero.dataset.metric;
@@ -1845,7 +1965,7 @@ document.addEventListener("click", (e) => {
 // after the redraw, focus goes back on the same item (mouse or keyboard), so Tab carries on from there
 function refocus(e, sel) { const el = document.querySelector(sel); if (el) el.focus({ preventScroll: e.detail !== 0 }); }
 document.addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".hbar, [data-metric], [data-day], [data-sess], [data-proj], [data-model], [data-sort], [data-more]")) {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches(".hbar, [data-metric], [data-tool],[data-day], [data-sess], [data-proj], [data-model], [data-sort], [data-more]")) {
     e.preventDefault(); swallowClick = false; e.target.dispatchEvent(new MouseEvent("click", { bubbles: true })); return;
   }
   if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key) && e.target.matches && e.target.matches('.tabs [role="tab"]')) {

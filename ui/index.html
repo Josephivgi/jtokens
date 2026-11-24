@@ -364,6 +364,9 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
   .prices { min-height: 70vh; }
   /* full screen on a small window: the extra Sessions columns would push the numbers off the card */
   .card.max .xcol { display: none; }
+  /* 400px rows: a smaller ring keeps the mix table from scrolling under the card's scrollbar */
+  .mixwrap .donut { width: 130px !important; height: 130px !important; }
+  .mixtab { padding-right: 8px; }
 }
 /* phone-width windows: one column of cards, two KPIs per row */
 @media (max-width: 640px) {
@@ -1278,12 +1281,12 @@ function renderShare() {
     per[i].set(k, (per[i].get(k) || 0) + v); tot[i] += v; used.push(r);
   }
   const order = topModelsFor(used).filter(ownSeries); if (per.some((m) => m.has(-1))) order.push(-1);
-  if (!order.length) { $("#shareLegend").innerHTML = ""; el.innerHTML = `<div class="empty">${noUsage({ ignoreDay: true, ignoreModel: true }, "No usage in this range.")}</div>`; return; }
+  if (!order.length) { $("#shareLegend").innerHTML = ""; $("#shareSub").textContent = ""; el.innerHTML = `<div class="empty">${noUsage({ ignoreDay: true, ignoreModel: true }, "No usage in this range.")}</div>`; return; }
   $("#shareLegend").innerHTML = legendHtml(order.filter((m) => m !== -1)) + (order.includes(-1) ? `<span><i style="background:var(--other)"></i>Other models</span>` : ""); rove("#shareLegend", "[data-model]");
   $("#shareSub").textContent = `Share of ${state.metric === "cost" ? "API cost" : "tokens"} each ${step === 7 ? "week" : "day"}${state.day ? ", your days shaded" : ", days with no use skipped"}`;
   // only buckets with use are drawn, so idle days do not pull every band to zero
   const idx = tot.map((t, i) => t > 0 ? i : -1).filter((i) => i >= 0);
-  if (idx.length < 2) { $("#shareLegend").innerHTML = ""; el.innerHTML = `<div class="empty">Only one ${step === 7 ? "week" : "day"} with use in this range.</div>`; return; }
+  if (idx.length < 2) { $("#shareLegend").innerHTML = ""; $("#shareSub").textContent = ""; el.innerHTML = `<div class="empty">Only one ${step === 7 ? "week" : "day"} with use in this range.</div>`; return; }
   const x = (j) => L + j / (idx.length - 1) * plotW, y = (p) => T + plotH - p * plotH;
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Share of each model per ${step === 7 ? "week" : "day"}. Arrow keys move between ${step === 7 ? "weeks" : "days"}.">`;
   for (const p of [0, .25, .5, .75, 1]) s += `<line x1="${L}" x2="${W - R}" y1="${y(p)}" y2="${y(p)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(p) + 4}" text-anchor="end">${p * 100}%</text>`;
@@ -1297,7 +1300,7 @@ function renderShare() {
   }
   // picked days are shaded, as on the daily chart; the mix still covers the whole range
   if (state.day) { const hw = plotW / (idx.length - 1) / 2; idx.forEach((i, j) => { const a = keys[i * step], b = keys[Math.min(keys.length - 1, i * step + step - 1)]; if (b >= state.day[0] && a <= state.day[1]) { const x0 = Math.max(L, x(j) - hw), x1 = Math.min(L + plotW, x(j) + hw); s += `<rect class="selected-band" x="${x0}" y="${T}" width="${Math.max(2, x1 - x0)}" height="${plotH}" style="opacity:.22"/>`; } }); }
-  const lab = (i) => step === 7 ? "Week of " + dayLabel(keys[i * 7]) : dayLabel(keys[i]);
+  const lab = (i) => step === 7 ? "Week of " + dayLabel(keys[i * step]) : dayLabel(keys[i]);
   const lw = Math.max(58, 14 + 6.8 * 8), every = Math.ceil(idx.length / Math.max(2, Math.floor(plotW / lw)));
   idx.forEach((i, j) => { if (j % every === 0 || j === idx.length - 1) { if (j !== idx.length - 1 && x(idx.length - 1) - x(j) < lw) return; const lx = x(j); s += `<text x="${lx}" y="${H - 6}" text-anchor="${j === 0 ? "start" : j === idx.length - 1 ? "end" : "middle"}">${dayLabel(keys[i * step])}</text>`; } });
   const slot = plotW / (idx.length - 1);
@@ -1668,8 +1671,9 @@ function renderLimits() {
     // every few buckets, plus the last one; a periodic label too close to the last one is skipped
     if (i !== n - 1 && (i % every !== 0 || (n - 1 - i) * (x(b.t1) - x(b.t0)) < labelW)) return;
     const d = new Date(b.t0 * 1000);
-    const lx = x(b.t0) + (x(b.t1) - x(b.t0)) / 2, end = lx + 40 > W - 2;
-    s += `<text x="${end ? W - 2 : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${hourly ? hourName(d.getHours()) : dayLabel(b.k)}</text>`;
+    // the right strip holds the % axis, so a label at the edge stops before it
+    const edge = W - R - 2, lx = Math.min(x(b.t0) + (x(b.t1) - x(b.t0)) / 2, L + plotW), end = lx + 40 > edge;
+    s += `<text x="${end ? edge : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${hourly ? hourName(d.getHours()) : dayLabel(b.k)}</text>`;
   });
   // one line per reported window; a sample gap of over 20 minutes breaks the line
   for (const s2 of series) {
@@ -1691,7 +1695,7 @@ function renderLimits() {
   buckets.forEach((b, i) => {
     const parts = [`${fmtInt(reqs[i])} request${reqs[i] === 1 ? "" : "s"}`];
     for (const s2 of series) { const v = lastPtLE(s2.pts, b.t1 - 1); if (v !== null) parts.push(`${nameOf.get(s2.src) || ""} ${LIM_WIN_NAME[s2.w] || s2.w} ${Math.round(v)}%`); }
-    s += `<rect class="hit" data-i="${i}" x="${x(b.t0).toFixed(1)}" y="${T}" width="${Math.max(1, x(b.t1) - x(b.t0)).toFixed(1)}" height="${plotH}" tabindex="-1" role="img" aria-label="${esc(bucketLabel(b))}: ${esc(parts.join(", "))}"/>`;
+    s += `<rect class="hit" data-i="${i}" x="${x(b.t0).toFixed(1)}" y="${T}" width="${Math.max(1, Math.min(L + plotW, x(b.t1)) - x(b.t0)).toFixed(1)}" height="${plotH}" tabindex="-1" role="img" aria-label="${esc(bucketLabel(b))}: ${esc(parts.join(", "))}"/>`;
   });
   s += `</svg>`;
   $("#limits").innerHTML = s;
@@ -2414,7 +2418,7 @@ function renderReport() {
   $("#repSub").textContent = (state.src === "all" ? "All sources" : SRC_NAME[+state.src]) + ", all logs on disk";
   if (!d.n) { $("#report").innerHTML = `<div class="empty">No usage in these logs.</div>`; return; }
   const top = (m, i) => [...m.entries()].filter((e) => e[1][i] > 0).sort((a, b) => b[1][i] - a[1][i]);
-  const rr = (l, v, s2) => `<div class="rr"><span>${l}</span><span>${v}${s2 ? ` <span class="sub2">${s2}</span>` : ""}</span></div>`;
+  const rr = (l, v, s2) => `<div class="rr"><span title="${esc(String(l).replace(/<[^>]*>/g, ""))}">${l}</span><span>${v}${s2 ? ` <span class="sub2">${s2}</span>` : ""}</span></div>`;
   const sec = (h, body) => `<div><h3>${h}</h3>${body}</div>`;
   const dayName = (k) => dayLabel(k);
   const wd = top(d.perWd, 0)[0], wdDays = wd ? wd[1][2].size : 0;

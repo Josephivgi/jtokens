@@ -106,7 +106,6 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .share .mix { height: 16px; border-radius: 5px; }
 .shcap { font-size: 12px; }
 .mixwrap .donut { width: 190px !important; height: 190px !important; }
-.mixrow { padding: 6px 2px; }
 #shareChart .hit:hover { fill: var(--text-primary); fill-opacity: .08; }
 .hero .ax { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin: 3px 0 6px; }
 .stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
@@ -216,7 +215,7 @@ svg text.dn-v { fill: var(--text-primary); font-size: 15px; font-weight: 650; }
 .shcap { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shcap b { color: var(--text-primary); font-weight: 600; }
 .hbar .val .pc { color: var(--text-muted); font-size: 11px; margin-left: 8px; display: inline-block; min-width: 34px; }
-.mixrow { display: grid; grid-template-columns: minmax(0, 1fr) auto 52px 52px; gap: 8px; padding: 4px 2px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+.mixrow { display: grid; grid-template-columns: minmax(0, 1fr) auto 52px 52px; gap: 8px; padding: 6px 2px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
 .mixrow span:first-child { display: inline-flex; gap: 6px; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
 .mixrow i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 .mixrow span + span { text-align: right; }
@@ -1284,7 +1283,7 @@ function renderShare() {
   $("#shareSub").textContent = `Share of ${state.metric === "cost" ? "API cost" : "tokens"} each ${step === 7 ? "week" : "day"}${state.day ? ", your days shaded" : ", days with no use skipped"}`;
   // only buckets with use are drawn, so idle days do not pull every band to zero
   const idx = tot.map((t, i) => t > 0 ? i : -1).filter((i) => i >= 0);
-  if (idx.length < 2) { el.innerHTML = `<div class="empty">Only one ${step === 7 ? "week" : "day"} with use in this range.</div>`; return; }
+  if (idx.length < 2) { $("#shareLegend").innerHTML = ""; el.innerHTML = `<div class="empty">Only one ${step === 7 ? "week" : "day"} with use in this range.</div>`; return; }
   const x = (j) => L + j / (idx.length - 1) * plotW, y = (p) => T + plotH - p * plotH;
   let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Share of each model per ${step === 7 ? "week" : "day"}. Arrow keys move between ${step === 7 ? "weeks" : "days"}.">`;
   for (const p of [0, .25, .5, .75, 1]) s += `<line x1="${L}" x2="${W - R}" y1="${y(p)}" y2="${y(p)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(p) + 4}" text-anchor="end">${p * 100}%</text>`;
@@ -1666,7 +1665,8 @@ function renderLimits() {
   const labelW = hourly ? 34 : Math.max(58, 14 + 6.6 * 8);
   const every = Math.ceil(n / Math.max(2, Math.floor(plotW / labelW)));
   buckets.forEach((b, i) => {
-    if ((i % every !== 0 || i === n - 1 && n % every !== 0 && (n - 1 - i) * (x(b.t1) - x(b.t0)) < 20) && i !== n - 1) return;
+    // every few buckets, plus the last one; a periodic label too close to the last one is skipped
+    if (i !== n - 1 && (i % every !== 0 || (n - 1 - i) * (x(b.t1) - x(b.t0)) < labelW)) return;
     const d = new Date(b.t0 * 1000);
     const lx = x(b.t0) + (x(b.t1) - x(b.t0)) / 2, end = lx + 40 > W - 2;
     s += `<text x="${end ? W - 2 : lx}" y="${H - 6}" text-anchor="${end ? "end" : "middle"}">${hourly ? hourName(d.getHours()) : dayLabel(b.k)}</text>`;
@@ -1977,7 +1977,7 @@ document.addEventListener("focusin", (e) => {
   if (y + h > innerHeight - 8) y = innerHeight - h - 8;
   tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
 });
-document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".hit")) { tip.style.display = "none"; tipKey = null; e.target.removeAttribute("aria-describedby"); } });
+document.addEventListener("focusout", (e) => { if (e.target.closest && e.target.closest(".hit")) { tip.style.display = "none"; tipKey = null; tipFromFocus = false; e.target.removeAttribute("aria-describedby"); } });
 let lastSessTh = null;
 let swallowClick = false; // the click that ends a drag cancelled with Esc
 document.addEventListener("click", (e) => {
@@ -2208,9 +2208,12 @@ document.addEventListener("mousemove", (e) => {
   drag.band.setAttribute("x", Math.min(ax, bx)); drag.band.setAttribute("width", Math.abs(bx - ax) + w);
   drag.band.setAttribute("y", a.getAttribute("y")); drag.band.setAttribute("height", a.getAttribute("height"));
 });
-document.addEventListener("mouseup", () => {
+document.addEventListener("mouseup", (e) => {
   if (!drag) return;
   const d = drag; drag = null;
+  // a fast drag can end on a bar no mousemove reported; the release point wins
+  const end = e.target.closest && e.target.closest("#daily .hit[data-day], #daily .hit[data-idle]");
+  if (end && end.ownerSVGElement === d.from.ownerSVGElement) d.to = end;
   if (d.from === d.to) {
     // a plain click: toggle the day here (a redraw may already have replaced the bar), and skip the click that follows
     swallowClick = true; setTimeout(() => { swallowClick = false; }, 0);

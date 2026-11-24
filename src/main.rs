@@ -646,7 +646,18 @@ fn devin_range(db: &Path, lo: i64, hi: i64) -> Option<Vec<(i64, DbRow)>> {
         let fast = lower.ends_with("-fast") || lower.ends_with("-lightning");
         // created_at is milliseconds in current databases; a value that small is already seconds
         let secs = if created > 1_000_000_000_000 { created / 1000 } else { created };
-        let id = key(&[sid.as_bytes(), &rid.to_le_bytes()]);
+        // the real dedupe key is the request that produced the reply: Devin
+        // writes many replies twice (same request_id/message_id, two rows) and
+        // replayed copies share it too, so each must count once. Without those
+        // ids, the row key keeps every row distinct.
+        let mid = str_field(cb, b"\"message_id\"");
+        let id = md
+            .get("request_id")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|r| key(&[b"req:", r.as_bytes()]))
+            .or_else(|| mid.filter(|s| !s.is_empty()).map(|m| key(&[b"msg:", m.as_bytes()])))
+            .unwrap_or_else(|| key(&[sid.as_bytes(), &rid.to_le_bytes()]));
         out.push((rid, DbRow { sid, secs, model: model.to_string(), fast, input, output, cache_read, cache_write, id }));
     }
     Some(out)

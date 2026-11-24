@@ -634,6 +634,36 @@ fn devin_speed_tails_mark_the_event_fast() {
     assert!(!evs[2].fast);
 }
 
+// A reply replayed into a forked session keeps its request_id, so both copies
+// must dedupe to one event downstream; a row without it keys on its row id.
+#[test]
+fn devin_request_id_is_the_dedupe_key() {
+    let t = TempDir::new("devin-reqid");
+    let db = t.path().join("sessions.db");
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            r#"CREATE TABLE sessions (id TEXT PRIMARY KEY, working_directory TEXT, title TEXT);
+               CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, chat_message TEXT, created_at INTEGER);
+               INSERT INTO sessions VALUES ('s1', 'C:/p', 'a'), ('s2', 'C:/p', 'b');
+               INSERT INTO message_nodes VALUES (1, 's1', '{"role":"assistant","metadata":{"request_id":"r-1","metrics":{"input_tokens":10,"output_tokens":1,"cache_read_tokens":0}}}', 1795053600000);
+               INSERT INTO message_nodes VALUES (2, 's2', '{"role":"assistant","metadata":{"request_id":"r-1","metrics":{"input_tokens":10,"output_tokens":1,"cache_read_tokens":0}}}', 1795053600000);
+               INSERT INTO message_nodes VALUES (3, 's1', '{"role":"assistant","metadata":{"metrics":{"input_tokens":5,"output_tokens":1,"cache_read_tokens":0}}}', 1795053601000);
+               INSERT INTO message_nodes VALUES (4, 's1', '{"role":"assistant","metadata":{"metrics":{"input_tokens":7,"output_tokens":1,"cache_read_tokens":0}}}', 1795053602000);"#,
+        )
+        .unwrap();
+    }
+    let mut st = DbScan::default();
+    scan_devin(&db, &mut st).expect("the database reads");
+    let a = &st.files.iter().find(|f| f.session == "s1").unwrap().events;
+    let b = &st.files.iter().find(|f| f.session == "s2").unwrap().events;
+    assert_eq!(a.len(), 3);
+    assert_eq!(b.len(), 1);
+    assert_eq!(a[0].id, b[0].id, "the same request in a copied session dedupes");
+    assert_ne!(a[1].id, 0);
+    assert_ne!(a[1].id, a[2].id, "rows without a request id stay distinct");
+}
+
 #[test]
 fn devin_database_that_is_missing_or_empty_gives_no_events() {
     let t = TempDir::new("devin-empty");

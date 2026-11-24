@@ -75,7 +75,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .chip button:hover { color: var(--text-primary); }
 .filters .btn { padding: 2px 9px; font-size: 12px; min-height: 24px; }
 /* the summary: two big tiles for API cost and tokens, then the smaller numbers */
-.kpis { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px; flex: none; }
+.kpis { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1fr); gap: 12px; flex: none; }
 .kpi { padding: 8px 14px; min-width: 0; }
 .kpi .l { color: var(--text-secondary); font-size: 12px; }
 .kpi .v { font-size: 20px; font-weight: 650; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -91,7 +91,23 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .hero .at { display: flex; gap: 4px 18px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--grid); }
 .hero .at span { white-space: nowrap; }
 .hero .at b { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
-.hero .area { display: block; width: calc(100% + 32px); height: 70px; min-height: 70px; margin: 10px -16px 0; flex: 1 1 70px; }
+.hero .area { display: block; width: calc(100% + 40px); height: 120px; min-height: 120px; margin: 12px -20px 0; flex: 1 1 120px; }
+.hero { padding: 16px 20px 0; }
+.hero .v { font-size: 46px; letter-spacing: -1px; }
+.hero .l { font-size: 14px; }
+.hero .s { font-size: 13px; }
+.hero .at { font-size: 13px; }
+.stats .kpi .v { font-size: 28px; }
+.stats .kpi { padding: 16px 18px; }
+.stats .kpi .l { font-size: 13px; }
+.stats .kpi .s { font-size: 12px; }
+.stats .mini { display: block; width: 100%; height: 34px; margin-top: 10px; }
+@container (min-width: 600px) { #models { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 22px; align-content: start; } }
+.share .mix { height: 16px; border-radius: 5px; }
+.shcap { font-size: 12px; }
+.mixwrap .donut { width: 190px !important; height: 190px !important; }
+.mixrow { padding: 6px 2px; }
+#shareChart .hit:hover { fill: var(--text-primary); fill-opacity: .08; }
 .hero .ax { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin: 3px 0 6px; }
 .stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); min-width: 0; }
 .stats .kpi { padding: 12px 14px; display: flex; flex-direction: column; justify-content: center; }
@@ -99,10 +115,17 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .stats .kpi:nth-child(n+3) { border-top: 1px solid var(--grid); }
 .stats .kpi .v { font-size: 22px; }
 /* the board scrolls with the page, so charts get real height instead of sharing one screen */
-.board { flex: none; display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: clamp(380px, 52vh, 560px) clamp(320px, 40vh, 440px) clamp(340px, 46vh, 520px) 420px; }
-#c-daily { grid-column: span 3; }
-#c-hourly { grid-column: span 2; }
+.board { flex: none; display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: clamp(520px, 66vh, 760px) clamp(440px, 54vh, 600px) clamp(440px, 54vh, 600px) clamp(460px, 58vh, 640px) 480px; }
+#c-daily { grid-column: 1 / -1; }
+#c-models { grid-column: span 2; }
+#c-hourly, #c-share { grid-column: span 2; }
 #c-sessions { grid-column: span 3; }
+/* bigger type on the charts now that they have the room */
+.board svg text { font-size: 12px; }
+.board .card h2 { font-size: 14px; }
+.board .card { padding: 12px 16px; }
+#c-daily .legend { font-size: 12px; gap: 4px 14px; }
+#c-daily svg text.vl { font-size: 12px; }
 #c-limits { grid-column: 1 / -1; }
 /* By tool: cost and tokens side by side for each harness */
 .trow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 7px 6px; border-radius: 6px; cursor: pointer; align-items: center; }
@@ -288,8 +311,10 @@ svg text.vl { fill: var(--text-secondary); font-size: 11px; }
 body.on-prices #srcSeg, body.on-prices #rangeSeg, body.on-prices #metricSeg { display: none; }
 /* Alerts: the report shows both measures over all history, so range and measure do not apply */
 body.on-alerts #rangeSeg, body.on-alerts #metricSeg { display: none; }
-.acards { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
-.acards > .card:first-child { grid-column: 1 / -1; }
+.acards { flex: 1; min-height: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(220px, 1.1fr) minmax(0, 1fr); }
+.acards > .card:first-child, #c-al48 { grid-column: 1 / -1; }
+.lim-line { stroke: var(--s8); stroke-width: 1.5; stroke-dasharray: 6 4; }
+svg text.lim-l { fill: var(--s8); font-weight: 600; }
 .alrow { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .allimit { color: var(--text-secondary); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
 .alfield { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; }
@@ -331,8 +356,8 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
 /* small windows: stack the cards and let the page scroll */
 @media (max-width: 1050px), (max-height: 660px) {
   .app { height: auto; min-height: 100vh; }
-  .board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 360px; grid-auto-rows: 360px; grid-auto-flow: row dense; }
-  #c-daily, #c-hourly, #c-sessions { grid-column: 1 / -1; }
+  .board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 460px; grid-auto-rows: 400px; grid-auto-flow: row dense; }
+  #c-daily, #c-hourly, #c-share, #c-models, #c-sessions { grid-column: 1 / -1; }
   #c-sessions { grid-row: span 2; }
   .kpis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .stats { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -347,7 +372,8 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
   .board { grid-template-columns: minmax(0, 1fr); }
   #c-sessions { grid-row: auto; }
   .kpis { grid-template-columns: minmax(0, 1fr); }
-  .hero .v { font-size: 30px; }
+  .hero .v { font-size: 34px; }
+  .hero .area { height: 90px; min-height: 90px; }
   .stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .stats .kpi:nth-child(odd) { border-left: 0; }
   .stats .kpi:nth-child(n+3) { border-top: 1px solid var(--grid); }
@@ -402,7 +428,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="legend" id="dailyLegend"></div>
         <div class="chart" id="daily"></div>
       </div>
-      <div class="card">
+      <div class="card" id="c-models">
         <div class="hd"><h2>By model</h2><span class="sub" id="modelSub">Click to filter</span><span class="spacer"></span>
           <div class="seg mini" id="modelMode" role="group" aria-label="Model view"><button data-v="list" aria-pressed="true">List</button><button data-v="trend" aria-pressed="false">Trend</button></div></div>
         <div class="share" id="modelShare" aria-hidden="true"></div>
@@ -414,14 +440,19 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="hd"><h2>By tool</h2><span class="sub" id="toolSub">Click to show one tool</span></div>
         <div class="body" id="tools"></div>
       </div>
+      <div class="card" id="c-mix">
+        <div class="hd"><h2>Token mix</h2><span class="sub">Where the tokens and the cost went</span></div>
+        <div class="body" id="mix"></div>
+      </div>
       <div class="card" id="c-hourly">
         <div class="hd"><h2 id="hourTitle">By hour</h2><span class="sub" id="hourSub">Local time</span><span class="spacer"></span>
           <div class="seg mini" id="hourMode" role="group" aria-label="Hour chart view"><button data-v="hours" aria-pressed="true">Hours</button><button data-v="week" aria-pressed="false">Week</button></div></div>
         <div class="chart" id="hourly"></div>
       </div>
-      <div class="card" id="c-mix">
-        <div class="hd"><h2>Token mix</h2><span class="sub">Where the tokens and the cost went</span></div>
-        <div class="body" id="mix"></div>
+      <div class="card" id="c-share">
+        <div class="hd"><h2>Model mix over time</h2><span class="sub" id="shareSub">Share of each day</span></div>
+        <div class="legend" id="shareLegend"></div>
+        <div class="chart" id="shareChart"></div>
       </div>
       <div class="card">
         <div class="hd"><h2>Projects</h2><span class="sub" id="projSub">Working folder</span><span class="spacer"></span>
@@ -459,6 +490,11 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
           <div class="note">Watching checks the logs every 30 seconds, even while the window is minimized. A limit of 0 turns that alert off. Once an alert fires it stays quiet for a while and re-arms when usage falls back under half the limit.</div>
           <div class="note" id="alErr" role="alert" hidden></div>
         </div>
+      </div>
+      <div class="card" id="c-al48">
+        <div class="hd"><h2>Last 48 hours</h2><span class="sub" id="al48Sub">Per hour, with your alert limit</span><span class="spacer"></span>
+          <div class="seg mini" id="al48Mode" role="group" aria-label="Last 48 hours measure"><button data-v="cost" aria-pressed="true">API cost</button><button data-v="tokens" aria-pressed="false">Tokens</button></div></div>
+        <div class="chart" id="al48"></div>
       </div>
       <div class="card">
         <div class="hd"><h2>Recent alerts</h2><span class="sub">Newest first</span></div>
@@ -738,7 +774,7 @@ function focusKey(el) {
 }
 const subObs = new MutationObserver((ms) => { for (const m of ms) { const el = m.target.nodeType === 3 ? m.target.parentElement : m.target; if (el && el.id !== "hourSub" && el.id !== "priceSub") el.title = el.textContent; } });
 document.querySelectorAll(".card .hd .sub").forEach((e) => subObs.observe(e, { childList: true, characterData: true, subtree: true }));
-const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):not(.callout):not(.avg-l), #hourly svg text:not(.vl), #modelTrend svg text:not(.callout), #limits svg text").forEach((t) => t.setAttribute("aria-hidden", "true"));
+const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):not(.callout):not(.avg-l), #hourly svg text:not(.vl), #shareChart svg text, #modelTrend svg text:not(.callout), #limits svg text").forEach((t) => t.setAttribute("aria-hidden", "true"));
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
@@ -758,7 +794,7 @@ function render() {
   const base = [state.src, state.range, state.metric, state.day, state.model, state.proj, state.sess];
   // each list ignores its own selection, so clicking a row keeps the list where it was
   const own = { sessions: 6, projects: 5, models: 4 };
-  for (const [f, sel] of [[renderFilters, "#filters"], [renderKpis, "#kpis"], [renderDaily, "#daily"], [renderModels, () => state.modelMode === "trend" ? "#modelTrend" : "#models"], [renderHourly, "#hourly"], [renderTools, "#tools"], [renderMix, "#mix"], [renderSessions, "#sessions"], [renderProjects, () => state.projMode === "map" ? "#projMap" : "#projects"], [renderLimits, "#limits"]]) {
+  for (const [f, sel] of [[renderFilters, "#filters"], [renderKpis, "#kpis"], [renderDaily, "#daily"], [renderModels, () => state.modelMode === "trend" ? "#modelTrend" : "#models"], [renderHourly, "#hourly"], [renderShare, "#shareChart"], [renderTools, "#tools"], [renderMix, "#mix"], [renderSessions, "#sessions"], [renderProjects, () => state.projMode === "map" ? "#projMap" : "#projects"], [renderLimits, "#limits"]]) {
     try { f(); } catch (err) {
       if (window.ipc) window.ipc.postMessage("log:error " + f.name + ": " + (err && err.message));
       if (sel) $(typeof sel === "function" ? sel() : sel).innerHTML = `<div class="empty">Could not draw this ${sel === "#kpis" ? "summary" : sel === "#filters" ? "filter line" : "card"}. Press Refresh to try again.</div>`;
@@ -878,9 +914,9 @@ function renderKpis() {
   };
   const rangeName = state.day ? spanLabel() : state.range === 1 ? "Today" : state.range ? `Last ${state.range} days` : "All time";
   const tiles = [
-    ["Requests", fmtInt(reqs), delta(reqs - reqsN, prev && prev.reqs, fmtInt, "model calls")],
-    ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`],
-    ["Cost per active day", fmtUsd(perDay), perDayCaption()],
+    ["Requests", fmtInt(reqs), delta(reqs - reqsN, prev && prev.reqs, fmtInt, "model calls"), null, trend && trend.reqs],
+    ["Sessions", fmtInt(sess.size), `${days.size} active day${days.size === 1 ? "" : "s"}`, null, trend && trend.sess],
+    ["Cost per active day", fmtUsd(perDay), perDayCaption(), null, trend && trend.cost],
     [saved < 0 ? "Cache cost" : "Cache saved", fmtUsd(Math.abs(saved)), saved < 0 ? "writes cost more than reads saved" : "est. at list price, after write cost", "Reads at the cache rate instead of full input, minus the extra paid to write caches. Base list prices; writes counted as 5-minute writes (1.25x input), so 1-hour writes (2x) would lower it."],
   ];
   // all time, under the same tool, model, project and session filters
@@ -906,7 +942,7 @@ function renderKpis() {
       pk ? `<span>peak ${hs.unit} <b>${fmt(pk.v)}</b> ${esc(pk.label)}</span>` : ""].filter(Boolean).join("");
     return `<div class="kpi hero" role="button" tabindex="0" data-metric="${k}" aria-pressed="${on}" title="Show ${l.toLowerCase()} in the charts"><div class="top"><span class="l">${l}</span><span class="rg">${esc(rangeName)}</span></div><div class="v">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div><div class="at">${facts}</div>${areaChart(series.vals, on)}<div class="ax" aria-hidden="true"><span>${esc(hs.from)}</span><span>${esc(hs.to)}</span></div></div>`;
   };
-  $("#kpis").innerHTML = heroes.map(heroHtml).join("") + `<div class="stats">` + tiles.map(([l, v, s, help]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="cache" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div></div>`).join("") + `</div>`;
+  $("#kpis").innerHTML = heroes.map(heroHtml).join("") + `<div class="stats">` + tiles.map(([l, v, s, help, tr]) => `<div class="kpi"${help ? ` title="${esc(help)}" tabindex="0" role="group" data-kpi="cache" aria-label="${esc(l + " " + v + ". " + help)}"` : ""}><div class="l">${l}</div><div class="v">${v}</div><div class="s" title="${esc(s.replace(/<[^>]*>/g, ""))}">${s}</div>${tr ? miniBars(tr) : ""}</div>`).join("") + `</div>`;
   // say why a source is empty instead of showing a blank chart
   const notes = []; let why = "";
   if (!D.rows.length) notes.push("No usage logs found on this computer. JTokens reads ~/.claude/projects, ~/.codex/sessions, the OpenCode database, ~/.pi/agent/sessions and ~/.factory/sessions.");
@@ -972,6 +1008,13 @@ function heroTip(e, svg) {
   if (tx + tw > innerWidth - 8) tx = e.clientX - tw - 14;
   if (ty < 8) ty = e.clientY + 16;
   tip.style.left = Math.max(8, tx) + "px"; tip.style.top = ty + "px";
+}
+// small bars per day under a stat; today (the last bar) is lighter since it is not over
+function miniBars(vals) {
+  const max = Math.max(0, ...vals), n = vals.length;
+  if (!(max > 0) || n < 2) return "";
+  const W = 100 * n, H = 40, bw = 100 * 0.7;
+  return `<svg class="mini" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${vals.map((v, i) => { const h = v / max * (H - 2); return h > 0 ? `<rect x="${i * 100 + 15}" y="${(H - h).toFixed(1)}" width="${bw}" height="${Math.max(1, h).toFixed(1)}" fill="var(--accent)" fill-opacity="${i === n - 1 ? 0.3 : 0.55}"/>` : ""; }).join("")}</svg>`;
 }
 // a filled trend line that stretches to the tile's width
 function areaChart(vals, on) {
@@ -1150,6 +1193,7 @@ const chartResize = new ResizeObserver(() => {
     if (size("#daily") !== drawnAt["#daily"]) renderDaily();
     if (size("#hourly") !== drawnAt["#hourly"]) renderHourly();
     if (size("#limits") !== drawnAt["#limits"]) renderLimits();
+    if (size("#shareChart") !== drawnAt["#shareChart"]) renderShare();
     if (state.modelMode === "trend" && size("#modelTrend") !== drawnAt["#modelTrend"]) renderModelTrend();
     if (state.projMode === "map" && size("#projMap") !== drawnAt["#projMap"]) renderProjects();
     hideAxisText();
@@ -1159,6 +1203,7 @@ const chartResize = new ResizeObserver(() => {
 chartResize.observe($("#daily"));
 chartResize.observe($("#hourly"));
 chartResize.observe($("#limits"));
+chartResize.observe($("#shareChart"));
 chartResize.observe($("#modelTrend"));
 chartResize.observe($("#projMap"));
 
@@ -1213,6 +1258,61 @@ function renderModels() {
     </div>`;
   }).join("");
   rove("#models", ".hbar");
+}
+
+// 100% stacked area: each model's share of every day (weeks for long ranges)
+function renderShare() {
+  const el = $("#shareChart");
+  let start;
+  if (RS) { const k = FD() && RS < FD() ? FD() : RS; const [y, m, d] = k.split("-").map(Number); start = new Date(y, m - 1, d); }
+  else { let min = null; for (const r of D.rows) if (passes(r, { ignoreDay: true, ignoreModel: true })) { if (!min || r[9] < min) min = r[9]; } if (min) { const [y, m, d] = min.split("-").map(Number); start = new Date(y, m - 1, d); } }
+  const keys = []; if (start) { const today = new Date(); today.setHours(0, 0, 0, 0); for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) keys.push(dayKey(d)); }
+  if (keys.length < 2) { $("#shareLegend").innerHTML = ""; $("#shareSub").textContent = "Needs more than one day"; el.innerHTML = `<div class="empty">Pick 7 days or more to see how the mix changes.</div>`; return; }
+  const { W, H } = boxOf("#shareChart"), B = 22, T = 6, L = 40, R = 8, plotW = W - L - R, plotH = H - B - T;
+  const step = keys.length > 120 || plotW / keys.length < 4 ? 7 : 1;
+  const nb = Math.ceil(keys.length / step), at = new Map(keys.map((k, i) => [k, Math.floor(i / step)]));
+  const per = Array.from({ length: nb }, () => new Map()), tot = new Array(nb).fill(0), used = [];
+  for (const r of D.rows) {
+    if (!passes(r, { ignoreDay: true, ignoreModel: true })) continue;
+    const i = at.get(r[9]); if (i === undefined) continue;
+    const v = val(r); if (!(v > 0)) continue;
+    const k = ownSeries(r[0]) ? r[0] : -1;
+    per[i].set(k, (per[i].get(k) || 0) + v); tot[i] += v; used.push(r);
+  }
+  const order = topModelsFor(used).filter(ownSeries); if (per.some((m) => m.has(-1))) order.push(-1);
+  if (!order.length) { $("#shareLegend").innerHTML = ""; el.innerHTML = `<div class="empty">${noUsage({ ignoreDay: true, ignoreModel: true }, "No usage in this range.")}</div>`; return; }
+  $("#shareLegend").innerHTML = legendHtml(order.filter((m) => m !== -1)) + (order.includes(-1) ? `<span><i style="background:var(--other)"></i>Other models</span>` : ""); rove("#shareLegend", "[data-model]");
+  $("#shareSub").textContent = `Share of ${state.metric === "cost" ? "API cost" : "tokens"} each ${step === 7 ? "week" : "day"}, days with no use skipped`;
+  // only buckets with use are drawn, so idle days do not pull every band to zero
+  const idx = tot.map((t, i) => t > 0 ? i : -1).filter((i) => i >= 0);
+  if (idx.length < 2) { el.innerHTML = `<div class="empty">Only one ${step === 7 ? "week" : "day"} with use in this range.</div>`; return; }
+  const x = (j) => L + j / (idx.length - 1) * plotW, y = (p) => T + plotH - p * plotH;
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Share of each model per ${step === 7 ? "week" : "day"}. Arrow keys move between ${step === 7 ? "weeks" : "days"}.">`;
+  for (const p of [0, .25, .5, .75, 1]) s += `<line x1="${L}" x2="${W - R}" y1="${y(p)}" y2="${y(p)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(p) + 4}" text-anchor="end">${p * 100}%</text>`;
+  const base = new Array(idx.length).fill(0);
+  for (const m of order) {
+    const top = idx.map((i, j) => base[j] + (per[i].get(m) || 0) / tot[i]);
+    const up = top.map((p, j) => `${x(j).toFixed(1)},${y(p).toFixed(1)}`), down = base.map((p, j) => `${x(j).toFixed(1)},${y(p).toFixed(1)}`).reverse();
+    const faded = state.model !== null && state.model !== m ? ' fill-opacity="0.3"' : ' fill-opacity="0.92"';
+    s += `<polygon points="${up.join(" ")} ${down.join(" ")}" fill="${colorVar(m)}"${faded} stroke="var(--surface-1)" stroke-width="0.6"/>`;
+    top.forEach((p, j) => base[j] = p);
+  }
+  const lab = (i) => step === 7 ? "Week of " + dayLabel(keys[i * 7]) : dayLabel(keys[i]);
+  const lw = Math.max(58, 14 + 6.8 * 8), every = Math.ceil(idx.length / Math.max(2, Math.floor(plotW / lw)));
+  idx.forEach((i, j) => { if (j % every === 0 || j === idx.length - 1) { if (j !== idx.length - 1 && x(idx.length - 1) - x(j) < lw) return; const lx = x(j); s += `<text x="${lx}" y="${H - 6}" text-anchor="${j === 0 ? "start" : j === idx.length - 1 ? "end" : "middle"}">${dayLabel(keys[i * step])}</text>`; } });
+  const slot = plotW / (idx.length - 1);
+  idx.forEach((i, j) => {
+    const rows = order.filter((m) => per[i].get(m) > 0).map((m) => [m === -1 ? "Other models" : D.models[m].name, per[i].get(m) / tot[i]]);
+    s += `<rect class="hit" data-i="${j}" x="${Math.max(L, x(j) - slot / 2)}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${esc(lab(i))}: ${esc(rows.map(([n, p]) => n + " " + (p * 100).toFixed(1) + "%").join(", "))}"/>`;
+  });
+  s += `</svg>`;
+  el.innerHTML = s;
+  rove("#shareChart", ".hit");
+  $("#shareChart svg")._tip = (j) => {
+    const i = idx[j];
+    const rows = order.filter((m) => per[i].get(m) > 0).sort((a, b) => per[i].get(b) - per[i].get(a));
+    return `<div class="h">${esc(lab(i))}: ${tipVal(tot[i])}</div>` + rows.map((m) => `<div class="r"><span><i style="background:${colorVar(m)}"></i>${esc(m === -1 ? "Other models" : D.models[m].name)}</span><span>${(per[i].get(m) / tot[i] * 100).toFixed(1)}% · ${tipVal(per[i].get(m))}</span></div>`).join("");
+  };
 }
 
 const hourName = (h) => h === 0 ? "12a" : h < 12 ? h + "a" : h === 12 ? "12p" : (h - 12) + "p";
@@ -1888,6 +1988,7 @@ document.addEventListener("click", (e) => {
     if (seg.getAttribute("aria-pressed") === "true") return; // already selected: nothing changes, filters stay
     seg.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === seg));
     if (g === "priceProv") { priceProv = seg.dataset.v; applyPriceFilter(); return; }
+    if (g === "al48Mode") return; // its own listener redraws that chart
     if (g === "srcSeg") { state.src = seg.dataset.v; pickColors(); if (state.day && FD()) { if (state.day[1] < FD()) state.day = null; else if (state.day[0] < FD()) state.day = [FD(), state.day[1]]; } state.model = null; state.sess = null; state.proj = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "rangeSeg") { state.range = +seg.dataset.v; state.day = null; state.sessCap = 300; state.projCap = 200; }
     if (g === "metricSeg") { state.metric = seg.dataset.v; pickColors(); }
@@ -2250,6 +2351,41 @@ for (const id of ["alOn", "alWatch", "alCostH", "alTokH", "alCostD"]) $("#" + id
 });
 $("#alTest").addEventListener("click", () => window.ipc && window.ipc.postMessage("alerttest"));
 
+// the last 48 hours per hour, against the hourly alert limit, so you can see how close usage runs
+let al48Mode = "cost";
+function renderAl48() {
+  if (!D || $("#tab-alerts").hidden) return;
+  const cost = al48Mode === "cost", cur = Math.floor(Date.now() / 3600000), n = 48, first = cur - n + 1;
+  const v = new Array(n).fill(0);
+  for (const r of D.rows) { if (state.src !== "all" && D.models[r[0]].src !== +state.src) continue; const i = r[2] - first; if (i >= 0 && i < n) v[i] += cost ? r[7] : r[3] + r[4] + r[5] + r[6]; }
+  const c = AL && AL.cfg, lim = c ? (cost ? c.costH : c.tokH) : 0;
+  const fmt = cost ? colUsd : fmtTok, max = Math.max(...v, lim || 0);
+  $("#al48Sub").textContent = lim ? `Per hour; the red line is your ${cost ? "API cost" : "tokens"} per hour alert limit` : "Per hour; set an hourly limit above to draw it here";
+  if (!(max > 0)) { $("#al48").innerHTML = `<div class="empty">No ${cost ? "priced " : ""}usage in the last 48 hours.</div>`; return; }
+  const { W, H } = boxOf("#al48"), B = 22, T = 18, plotH = H - B - T;
+  const ticks = niceTicks(max * 1.05, plotH > 240 ? 5 : 3), top = ticks[ticks.length - 1];
+  const tl = (t) => cost ? "$" + (t >= 100 ? Math.round(t) : t.toFixed(t % 1 ? 2 : 0)) : fmtTok(t);
+  const L = Math.max(44, 12 + 6.8 * Math.max(...ticks.map((t) => tl(t).length))), R = 8, plotW = W - L - R, slot = plotW / n, bw = slot * 0.72;
+  const y = (x) => T + plotH - x / top * plotH;
+  const lab = (i) => { const d = new Date((first + i) * 3600000); return dayLabel(dayKey(d)) + " " + pad(d.getHours()) + ":00"; };
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${cost ? "API cost" : "Tokens"} per hour, last 48 hours. Arrow keys move between hours.">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end" aria-hidden="true">${tl(t)}</text>`;
+  v.forEach((x, i) => {
+    const h = y(0) - y(x), bx = L + i * slot + (slot - bw) / 2, over = lim && x >= lim;
+    if (h > 0) s += `<path d="${roundTop(bx, y(x), bw, Math.max(1, h), h > 4 ? 3 : 0)}" fill="${over ? "var(--s8)" : "var(--accent)"}"${i === n - 1 ? ' fill-opacity="0.5"' : ""}/>`;
+    const d = new Date((first + i) * 3600000);
+    if (d.getHours() % 6 === 0) s += `<text x="${L + i * slot + slot / 2}" y="${H - 6}" text-anchor="middle" aria-hidden="true">${d.getHours() === 0 ? dayLabel(dayKey(d)) : hourName(d.getHours())}</text>`;
+    s += `<rect class="hit" data-i="${i}" x="${L + i * slot}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${esc(lab(i))}: ${fmt(x)}${i === n - 1 ? " so far" : ""}${over ? ", over the limit" : ""}"/>`;
+  });
+  if (lim) s += `<line class="lim-line" x1="${L}" x2="${W - R}" y1="${y(lim)}" y2="${y(lim)}"/><text class="lim-l halo" x="${W - R - 4}" y="${y(lim) - 6}" text-anchor="end">Alert at ${fmt(lim)} per hour</text>`;
+  s += `</svg>`;
+  $("#al48").innerHTML = s;
+  rove("#al48", ".hit");
+  $("#al48 svg")._tip = (i) => `<div class="h">${esc(lab(i))}${i === n - 1 ? " so far" : ""}</div><div class="r"><span>${cost ? "API cost" : "Tokens"}</span><span>${fmt(v[i])}</span></div>` + (lim ? `<div class="r"><span>Alert limit</span><span>${fmt(lim)} (${(v[i] / lim * 100).toFixed(0)}%)</span></div>` : "");
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("#al48Mode button"); if (b) { al48Mode = b.dataset.v; renderAl48(); } });
+new ResizeObserver(() => { if (!$("#tab-alerts").hidden) renderAl48(); }).observe($("#al48"));
+
 // the report covers all kept logs for the selected source; the date range filter does not apply
 function reportData() {
   const rows = !D ? [] : D.rows.filter((r) => state.src === "all" || D.models[r[0]].src === +state.src);
@@ -2269,6 +2405,7 @@ function reportData() {
   return out;
 }
 function renderReport() {
+  try { renderAl48(); } catch (err) { $("#al48").innerHTML = `<div class="empty">Could not draw this chart.</div>`; }
   const d = reportData();
   $("#repSub").textContent = (state.src === "all" ? "All sources" : SRC_NAME[+state.src]) + ", all logs on disk";
   if (!d.n) { $("#report").innerHTML = `<div class="empty">No usage in these logs.</div>`; return; }

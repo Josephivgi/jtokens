@@ -1,7 +1,8 @@
 # JTokens
 
-Fast viewer for token usage with API cost estimates, for Claude Code, Codex, OpenCode, Pi, Droid, Qwen Code and Devin.
-It reads the logs already on your computer. Nothing is sent anywhere.
+Fast viewer for token usage with API cost estimates, for Claude Code, Codex, OpenCode, Pi, Droid, Qwen Code, Devin and Cursor.
+It reads the logs already on your computer. Nothing is sent anywhere, except the Cursor account
+API read that fetches your own billed usage (see below).
 
 ## Download
 
@@ -35,6 +36,13 @@ OpenCode by message id. Codex forked sessions replay the parent's token events, 
 deduped by their cumulative total plus per-turn numbers. The same id under two harnesses counts twice.
 Pi and OpenCode record each request. Droid records only a running total per session, so each session's
 total is counted at the time its file was last saved.
+
+Cursor keeps no usage history on disk. JTokens reads it from the Cursor account API
+(`aiserver.v1.DashboardService/GetFilteredUsageEvents`, the same calls T3 Code's usage page makes)
+with the API key from `CURSOR_API_KEY` or the sign-in T3 Code stores in
+`~/.t3/**/userdata/secrets/provider-auth-*.bin`. Cursor reports the billed amount on every event,
+so those rows show real spend rather than a list-price estimate. Fetched events are kept in
+`%LOCALAPPDATA%JTokens\cursor-usage.json`, and each scan only asks for the new tail.
 
 ## Build from source
 

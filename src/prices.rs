@@ -188,11 +188,12 @@ pub static PRICES: &[Price] = &[
     ),
 ];
 
-/// Words Devin adds after the vendor's model id: the effort (low/medium/high/max) and speed
+/// Words Devin and Cursor add after the vendor's model id: the effort
+/// (minimal/low/medium/high/xhigh/max), the thinking flag, and the speed
 /// (fast/lightning) the session ran at. They are not part of the billed model, so when a bare
 /// match fails they are peeled off one at a time. Real models ending in these words are still
 /// found first, so they keep their own row.
-const PEEL_SUFFIXES: [&str; 6] = ["low", "medium", "high", "max", "fast", "lightning"];
+const PEEL_SUFFIXES: [&str; 10] = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "thinking", "fast", "lightning"];
 
 /// Ids compare in canonical form: lowercase, a dash between digits read as a dot,
 /// so `gpt-6-1-sol` and `gpt-6.1-sol` name the same row.

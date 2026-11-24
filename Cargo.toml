@@ -2,7 +2,7 @@
 name = "jtokens"
 version = "1.3.0"
 edition = "2021"
-description = "Fast token and API cost viewer for Claude Code, Codex, OpenCode, Pi and Droid"
+description = "Fast token and API cost viewer for Claude Code, Codex, OpenCode, Pi, Droid and Cursor"
 license = "MIT"
 repository = "https://github.com/Josephivgi/jtokens"
 

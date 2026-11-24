@@ -385,7 +385,7 @@ fn opencode_database_that_is_missing_gives_nothing() {
 
 fn one_event_file(src: Src, session: &str, id: u64, input: u64) -> Arc<FileData> {
     let mut fd = FileData { src, size: 0, mtime: 0, session: session.into(), cwd: r"C:\p".into(), title: String::new(), models: vec!["claude-sonnet-5-5".into()], events: Vec::new() };
-    fd.events.push(Event { ts: 1_794_621_600, model: 0, input, output: 0, cache_read: 0, cache_w5m: 0, cache_w1h: 0, id, fast: false });
+    fd.events.push(Event { ts: 1_794_621_600, model: 0, input, output: 0, cache_read: 0, cache_w5m: 0, cache_w1h: 0, id, fast: false, cost: None });
     Arc::new(fd)
 }
 
@@ -445,14 +445,14 @@ fn records_without_an_id_are_never_merged() {
 fn the_page_gets_every_harness_name_and_model_source() {
     let files = vec![one_event_file(Src::Droid, "d", 7, 5)];
     let t = build_json(&mut AggCache::default(), &files, &ScanStats::default());
-    assert!(t.json.contains(r#""harnesses":["Claude Code","Codex","OpenCode","Pi","Droid","Qwen Code","Devin"]"#), "{}", &t.json[..t.json.len().min(300)]);
+    assert!(t.json.contains(r#""harnesses":["Claude Code","Codex","OpenCode","Pi","Droid","Qwen Code","Devin","Cursor"]"#), "{}", &t.json[..t.json.len().min(300)]);
     assert!(t.json.contains(r#""models":[{"src":4,"#), "model is tagged with its harness");
 }
 
 #[test]
 fn harness_list_and_source_numbers_agree() {
-    assert_eq!(HARNESS_NAMES.len(), 7);
-    for (i, src) in [Src::Claude, Src::Codex, Src::OpenCode, Src::Pi, Src::Droid, Src::Qwen, Src::Devin].into_iter().enumerate() {
+    assert_eq!(HARNESS_NAMES.len(), 8);
+    for (i, src) in [Src::Claude, Src::Codex, Src::OpenCode, Src::Pi, Src::Droid, Src::Qwen, Src::Devin, Src::Cursor].into_iter().enumerate() {
         assert_eq!(src as usize, i, "the page indexes harnesses by these numbers");
     }
 }
@@ -460,7 +460,7 @@ fn harness_list_and_source_numbers_agree() {
 #[test]
 fn unpriced_models_count_tokens_but_not_cost() {
     let mut fd = FileData { src: Src::OpenCode, size: 0, mtime: 0, session: "s".into(), cwd: r"C:\p".into(), title: String::new(), models: vec!["muse-spark-1.3-contributor".into()], events: Vec::new() };
-    fd.events.push(Event { ts: 1_794_621_600, model: 0, input: 1_000_000, output: 0, cache_read: 0, cache_w5m: 0, cache_w1h: 0, id: 1, fast: false });
+    fd.events.push(Event { ts: 1_794_621_600, model: 0, input: 1_000_000, output: 0, cache_read: 0, cache_w5m: 0, cache_w1h: 0, id: 1, fast: false, cost: None });
     let t = build_json(&mut AggCache::default(), &[Arc::new(fd)], &ScanStats::default());
     assert_eq!(t.tokens, 1_000_000);
     assert_eq!(t.cost, 0.0);

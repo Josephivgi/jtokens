@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod alerts;
+mod cursor;
 mod limits;
 mod prices;
 mod update;
@@ -173,7 +174,7 @@ fn json_obj_span(buf: &[u8], key: &[u8]) -> Option<(usize, usize)> {
 /// One value per harness. The number is the index into `HARNESS_NAMES`, which
 /// the page gets as `harnesses`; add a harness by adding a name and a reader.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-enum Src {
+pub(crate) enum Src {
     Claude = 0,
     Codex = 1,
     OpenCode = 2,
@@ -181,31 +182,34 @@ enum Src {
     Droid = 4,
     Qwen = 5,
     Devin = 6,
+    Cursor = 7,
 }
 
-const HARNESS_NAMES: [&str; 7] = ["Claude Code", "Codex", "OpenCode", "Pi", "Droid", "Qwen Code", "Devin"];
+const HARNESS_NAMES: [&str; 8] = ["Claude Code", "Codex", "OpenCode", "Pi", "Droid", "Qwen Code", "Devin", "Cursor"];
 
-struct Event {
-    ts: u32,
-    model: u16,
-    input: u64,
-    output: u64,
-    cache_read: u64,
-    cache_w5m: u64,
-    cache_w1h: u64,
-    id: u64,
-    fast: bool,
+pub(crate) struct Event {
+    pub ts: u32,
+    pub model: u16,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_w5m: u64,
+    pub cache_w1h: u64,
+    pub id: u64,
+    pub fast: bool,
+    /// Billed USD reported by the provider (Cursor). None prices tokens by the table.
+    pub cost: Option<f64>,
 }
 
-struct FileData {
-    src: Src,
-    size: u64,
-    mtime: u64,
-    session: String,
-    cwd: String,
-    title: String,
-    models: Vec<String>,
-    events: Vec<Event>,
+pub(crate) struct FileData {
+    pub src: Src,
+    pub size: u64,
+    pub mtime: u64,
+    pub session: String,
+    pub cwd: String,
+    pub title: String,
+    pub models: Vec<String>,
+    pub events: Vec<Event>,
 }
 
 /// A file opened with a sequential-scan hint, so Windows prefetches the big logs.
@@ -236,7 +240,7 @@ fn codex_key(total: u64, input: u64, output: u64, cached: u64) -> u64 {
     h | 1
 }
 
-fn intern(models: &mut Vec<String>, s: &[u8]) -> u16 {
+pub(crate) fn intern(models: &mut Vec<String>, s: &[u8]) -> u16 {
     if let Some(i) = models.iter().position(|m| m.as_bytes() == s) {
         return i as u16;
     }
@@ -245,7 +249,7 @@ fn intern(models: &mut Vec<String>, s: &[u8]) -> u16 {
 }
 
 /// Stable id for one usage record, so a copied record (a forked session) counts once.
-fn key(parts: &[&[u8]]) -> u64 {
+pub(crate) fn key(parts: &[&[u8]]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for p in parts {
         for &b in p.iter() {
@@ -328,7 +332,7 @@ fn parse_pi(path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec<u
                 };
                 let model = intern(&mut fd.models, model.as_bytes());
                 // pi's output already includes reasoning; cache writes use the 5 minute rate
-                fd.events.push(Event { ts, model, input, output, cache_read, cache_w5m: cache_write, cache_w1h: 0, id, fast: false });
+                fd.events.push(Event { ts, model, input, output, cache_read, cache_w5m: cache_write, cache_w1h: 0, id, fast: false, cost: None });
             }
             _ => {}
         }
@@ -389,6 +393,7 @@ fn parse_droid(path: &Path, session: String, size: u64, mtime: u64) -> Option<Fi
         cache_w1h: 0,
         id,
         fast: false,
+        cost: None,
     });
     Some(fd)
 }
@@ -447,7 +452,7 @@ fn parse_qwen(path: &Path, session: String, size: u64, mtime: u64, buf: &mut Vec
             None => 0,
         };
         let model = intern(&mut fd.models, model.as_bytes());
-        fd.events.push(Event { ts, model, input: prompt - cached, output, cache_read: cached, cache_w5m: 0, cache_w1h: 0, id, fast: false });
+        fd.events.push(Event { ts, model, input: prompt - cached, output, cache_read: cached, cache_w5m: 0, cache_w1h: 0, id, fast: false, cost: None });
     }
     Some(fd)
 }
@@ -790,6 +795,7 @@ fn db_rebuild(st: &mut DbScan, src: Src) {
                 cache_w1h: 0,
                 id: r.id,
                 fast: r.fast,
+                cost: None,
             });
         }
         fd
@@ -912,6 +918,7 @@ fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf
                     cache_w1h: 0,
                     id,
                     fast: false,
+                    cost: None,
                 });
             }
             (Src::Claude, 1) => {
@@ -930,6 +937,7 @@ fn parse_file(src: Src, path: &Path, session: String, size: u64, mtime: u64, buf
                     cache_w1h: w1h,
                     id: r.id,
                     fast: r.flags & 1 != 0,
+                    cost: None,
                 });
             }
             _ => {}
@@ -1019,7 +1027,7 @@ fn walk_all(roots: &[(Src, PathBuf, &'static str)]) -> Vec<(Src, PathBuf, u64, u
     found.into_inner().unwrap()
 }
 
-fn home() -> PathBuf {
+pub(crate) fn home() -> PathBuf {
     std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_default()
 }
 
@@ -1068,7 +1076,8 @@ struct ScanStats {
     walk_ms: f64,
     opencode_ms: f64,
     devin_ms: f64,
-    by_src_ms: [f64; 7],
+    cursor_ms: f64,
+    by_src_ms: [f64; 8],
 }
 
 #[derive(Default)]
@@ -1078,6 +1087,8 @@ struct Scanner {
     oc: DbScan,
     /// Devin's incremental database state
     dv: DbScan,
+    /// Cursor's account API state
+    cu: cursor::CursorScan,
     /// the last aggregation emitted, reused while no file changed
     agg: AggCache,
 }
@@ -1156,6 +1167,19 @@ impl Scanner {
             })
         });
 
+        // Cursor: an account API read, not files. It runs beside the walk like
+        // the database readers; a failure keeps the last numbers and is retried
+        // on the next scan.
+        let cu_t = {
+            let mut cu = std::mem::take(&mut self.cu);
+            std::thread::spawn(move || {
+                IN_SCAN.with(|c| c.set(true));
+                let t = Instant::now();
+                let files = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cursor::scan(&mut cu))).unwrap_or_default();
+                (cu, files, t.elapsed())
+            })
+        };
+
         // one queue for every root: the walk is fully parallel and starts while the
         // database threads above are already reading
         let tw = Instant::now();
@@ -1193,7 +1217,7 @@ impl Scanner {
         let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).min(32).min(todo.len().max(1));
         let parsed: Mutex<Vec<(usize, Arc<FileData>)>> = Mutex::new(Vec::with_capacity(todo.len()));
         // per-harness worker nanoseconds, so the report can name the slow provider
-        let src_ns: [AtomicUsize; 7] = Default::default();
+        let src_ns: [AtomicUsize; 8] = Default::default();
         if !todo.is_empty() {
             std::thread::scope(|s| {
                 for _ in 0..threads {
@@ -1255,10 +1279,16 @@ impl Scanner {
                 }
             }
         }
+        let (cu, cu_files, cu_dt) = cu_t.join().unwrap_or_default();
+        self.cu = cu;
+        stats.cursor_ms = cu_dt.as_secs_f64() * 1000.0;
+        stats.by_src_ms[Src::Cursor as usize] += stats.cursor_ms;
         stats.ms = t0.elapsed().as_secs_f64() * 1000.0;
         let mut files: Vec<Arc<FileData>> = result.into_iter().flatten().collect();
         files.extend(self.oc.files.iter().cloned());
         files.extend(self.dv.files.iter().cloned());
+        stats.files += usize::from(!cu_files.is_empty());
+        files.extend(cu_files);
         // the walk order changes run to run, so the list is sorted: the same set
         // gives the same order, which the page body cache and the sort below rely on
         files.sort_by(|a, b| (a.src as u8, a.session.as_str(), a.mtime, a.size).cmp(&(b.src as u8, b.session.as_str(), b.mtime, b.size)));
@@ -1425,6 +1455,9 @@ fn build_json(agg: &mut AggCache, files: &[Arc<FileData>], st: &ScanStats) -> To
     let mut rows: HashMap<(usize, usize, u32), Agg> = HashMap::new(); // (model, session, hour)
     // Keyed by harness too, so an id from one tool can never drop an event from another.
     let mut seen: HashSet<(u8, u64)> = HashSet::new();
+    // models whose events carry a provider-reported cost; they show as priced
+    // even with no row in the price table
+    let mut reported: HashSet<usize> = HashSet::new();
     let mut events = 0usize;
     let (mut tcost, mut ttok) = (0.0f64, 0u64);
 
@@ -1485,7 +1518,11 @@ fn build_json(agg: &mut AggCache, files: &[Arc<FileData>], st: &ScanStats) -> To
                 fast: e.fast,
                 ts: e.ts as u64,
             };
-            let cost = price.map(|p| prices::cost(p, &u)).unwrap_or(0.0);
+            // a provider-reported billed amount wins over the list-price estimate
+            let cost = e.cost.unwrap_or_else(|| price.map(|p| prices::cost(p, &u)).unwrap_or(0.0));
+            if e.cost.is_some() {
+                reported.insert(mi);
+            }
             let a = rows.entry((mi, s, e.ts / 3600)).or_default();
             a.input += e.input;
             a.output += e.output;
@@ -1540,7 +1577,7 @@ fn build_json(agg: &mut AggCache, files: &[Arc<FileData>], st: &ScanStats) -> To
         esc(m, &mut body);
         body.push_str(",\"name\":");
         esc(&shown, &mut body);
-        let _ = write!(body, ",\"priced\":{}}}", p.is_some());
+        let _ = write!(body, ",\"priced\":{}}}", p.is_some() || reported.contains(&i));
     }
     body.push_str("],\"projects\":[");
     for (i, p) in projects.iter().enumerate() {
@@ -1638,7 +1675,7 @@ fn serve() {
     }
 }
 
-const HELP: &str = "JTokens: token usage and API cost for Claude Code, Codex, OpenCode, Pi and Droid
+const HELP: &str = "JTokens: token usage and API cost for Claude Code, Codex, OpenCode, Pi, Droid and Cursor
 
   jtokens                                open the app
   jtokens --smoke --report r.json        scan twice with no window, write timings and totals
@@ -1763,7 +1800,7 @@ fn main() {
                 }
                 let _ = write!(d, "\"{}\":{:.0}", HARNESS_NAMES[i], ms);
             }
-            format!("{{\"walkMs\":{:.0},\"openCodeMs\":{:.0},\"devinMs\":{:.0},\"bySrcMs\":{{{d}}}}}", s.walk_ms, s.opencode_ms, s.devin_ms)
+            format!("{{\"walkMs\":{:.0},\"openCodeMs\":{:.0},\"devinMs\":{:.0},\"cursorMs\":{:.0},\"bySrcMs\":{{{d}}}}}", s.walk_ms, s.opencode_ms, s.devin_ms, s.cursor_ms)
         };
         let report = format!(
             "{{\"coldScanMs\":{:.1},\"warmScanMs\":{:.1},\"warmParsed\":{},\"jsonMs\":{:.1},\"files\":{},\"gb\":{:.2},\"events\":{},\"tokens\":{},\"costUsd\":{:.2},\"avx2\":{},\"warmSame\":{},\"cold\":{},\"warm\":{}}}",
@@ -2019,7 +2056,7 @@ fn fail(smoke: bool, report: &Option<String>, msg: &str) {
     }
 }
 
-fn data_dir() -> PathBuf {
+pub(crate) fn data_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(home).join("JTokens")
 }
 

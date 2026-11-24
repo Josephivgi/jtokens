@@ -113,7 +113,6 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .stats .kpi { padding: 12px 14px; display: flex; flex-direction: column; justify-content: center; }
 .stats .kpi:nth-child(even) { border-left: 1px solid var(--grid); }
 .stats .kpi:nth-child(n+3) { border-top: 1px solid var(--grid); }
-.stats .kpi .v { font-size: 22px; }
 /* the board scrolls with the page, so charts get real height instead of sharing one screen */
 .board { flex: none; display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: clamp(520px, 66vh, 760px) clamp(440px, 54vh, 600px) clamp(440px, 54vh, 600px) clamp(460px, 58vh, 640px) 480px; }
 #c-daily { grid-column: 1 / -1; }
@@ -153,7 +152,7 @@ label.chk { display: inline-flex; gap: 6px; align-items: center; min-height: 24p
 .gauge .gm.warn { color: var(--s4); }
 .gauge .gm.warn::before { content: "⚠ "; }
 .hero .area { cursor: crosshair; }
-.hero .hov { position: relative; }
+.hero .area-empty { display: flex; align-items: center; justify-content: center; height: 120px; margin: 12px -20px 0; flex: 1 1 120px; color: var(--text-muted); font-size: 12px; border-top: 1px dashed var(--grid); }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; min-width: 0; min-height: 0; display: flex; flex-direction: column; container-type: inline-size; }
 /* narrow cards drop the hint so the title and buttons fit */
 @container (max-width: 240px) { .card .hd .sub { display: none; } }
@@ -357,7 +356,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
 @media (max-width: 1050px), (max-height: 660px) {
   .app { height: auto; min-height: 100vh; }
   .board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 460px; grid-auto-rows: 400px; grid-auto-flow: row dense; }
-  #c-daily, #c-hourly, #c-share, #c-models, #c-sessions { grid-column: 1 / -1; }
+  #c-daily, #c-hourly, #c-share, #c-models, #c-proj, #c-sessions { grid-column: 1 / -1; }
   #c-sessions { grid-row: span 2; }
   .kpis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .stats { grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -454,7 +453,7 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="legend" id="shareLegend"></div>
         <div class="chart" id="shareChart"></div>
       </div>
-      <div class="card">
+      <div class="card" id="c-proj">
         <div class="hd"><h2>Projects</h2><span class="sub" id="projSub">Working folder</span><span class="spacer"></span>
           <div class="seg mini" id="projMode" role="group" aria-label="Project view"><button data-v="list" aria-pressed="true">List</button><button data-v="map" aria-pressed="false">Map</button></div></div>
         <div class="body" id="projects"></div>
@@ -778,7 +777,7 @@ const hideAxisText = () => document.querySelectorAll("#daily svg text:not(.vl):n
 function render() {
   if (!D) return;
   if (drag) { drag.pending = true; return; } // redraw after the drag ends
-  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (pricesFor !== D) { try { renderPrices(); } catch (err) { pricesKey = null; $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; } return; } // drawn when Overview comes back
+  if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (!$("#tab-alerts").hidden) { try { renderReport(); } catch (err) { if (window.ipc) window.ipc.postMessage("log:error renderReport: " + (err && err.message)); } } if (pricesFor !== D) { try { renderPrices(); } catch (err) { pricesKey = null; $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; } return; } // drawn when Overview comes back
   overviewDirty = false;
   const fk = focusOverride || focusKey(document.activeElement); focusOverride = null;
   if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; } // Sessions follow Measure
@@ -1019,7 +1018,7 @@ function miniBars(vals) {
 // a filled trend line that stretches to the tile's width
 function areaChart(vals, on) {
   const max = Math.max(0, ...vals), n = vals.length, W = 1000, H = 70;
-  if (!(max > 0) || n < 2) return `<svg class="area" aria-hidden="true"></svg>`;
+  if (!(max > 0) || n < 2) return `<div class="area-empty">${max > 0 ? "The trend shows once there is more than one hour or day" : "No use to chart yet"}</div>`;
   const x = (i) => (i / (n - 1)) * W, y = (v) => H - 3 - (v / max) * (H - 10);
   const pts = vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const c = on ? "var(--accent)" : "var(--text-muted)";
@@ -1282,7 +1281,7 @@ function renderShare() {
   const order = topModelsFor(used).filter(ownSeries); if (per.some((m) => m.has(-1))) order.push(-1);
   if (!order.length) { $("#shareLegend").innerHTML = ""; el.innerHTML = `<div class="empty">${noUsage({ ignoreDay: true, ignoreModel: true }, "No usage in this range.")}</div>`; return; }
   $("#shareLegend").innerHTML = legendHtml(order.filter((m) => m !== -1)) + (order.includes(-1) ? `<span><i style="background:var(--other)"></i>Other models</span>` : ""); rove("#shareLegend", "[data-model]");
-  $("#shareSub").textContent = `Share of ${state.metric === "cost" ? "API cost" : "tokens"} each ${step === 7 ? "week" : "day"}, days with no use skipped`;
+  $("#shareSub").textContent = `Share of ${state.metric === "cost" ? "API cost" : "tokens"} each ${step === 7 ? "week" : "day"}${state.day ? ", your days shaded" : ", days with no use skipped"}`;
   // only buckets with use are drawn, so idle days do not pull every band to zero
   const idx = tot.map((t, i) => t > 0 ? i : -1).filter((i) => i >= 0);
   if (idx.length < 2) { el.innerHTML = `<div class="empty">Only one ${step === 7 ? "week" : "day"} with use in this range.</div>`; return; }
@@ -1297,6 +1296,8 @@ function renderShare() {
     s += `<polygon points="${up.join(" ")} ${down.join(" ")}" fill="${colorVar(m)}"${faded} stroke="var(--surface-1)" stroke-width="0.6"/>`;
     top.forEach((p, j) => base[j] = p);
   }
+  // picked days are shaded, as on the daily chart; the mix still covers the whole range
+  if (state.day) { const hw = plotW / (idx.length - 1) / 2; idx.forEach((i, j) => { const a = keys[i * step], b = keys[Math.min(keys.length - 1, i * step + step - 1)]; if (b >= state.day[0] && a <= state.day[1]) { const x0 = Math.max(L, x(j) - hw), x1 = Math.min(L + plotW, x(j) + hw); s += `<rect class="selected-band" x="${x0}" y="${T}" width="${Math.max(2, x1 - x0)}" height="${plotH}" style="opacity:.22"/>`; } }); }
   const lab = (i) => step === 7 ? "Week of " + dayLabel(keys[i * 7]) : dayLabel(keys[i]);
   const lw = Math.max(58, 14 + 6.8 * 8), every = Math.ceil(idx.length / Math.max(2, Math.floor(plotW / lw)));
   idx.forEach((i, j) => { if (j % every === 0 || j === idx.length - 1) { if (j !== idx.length - 1 && x(idx.length - 1) - x(j) < lw) return; const lx = x(j); s += `<text x="${lx}" y="${H - 6}" text-anchor="${j === 0 ? "start" : j === idx.length - 1 ? "end" : "middle"}">${dayLabel(keys[i * step])}</text>`; } });
@@ -1523,7 +1524,7 @@ function renderTools() {
     a.cost += r[7]; a.tok += t; a.reqs += r[8]; a.sess.add(r[1]); if (!D.models[r[0]].priced) a.unp += t;
   }
   const list = agg.map((a, i) => [i, a]).filter(([, a]) => a.tok > 0 || a.reqs > 0);
-  if (!list.length) { $("#tools").innerHTML = `<div class="empty">No usage in this range.</div>`; return; }
+  if (!list.length) { $("#toolSub").textContent = ""; $("#tools").innerHTML = `<div class="empty">No usage in this range.</div>`; return; }
   const key = state.metric === "cost" ? (a) => a.cost : (a) => a.tok;
   list.sort((p, q) => key(q[1]) - key(p[1]) || q[1].tok - p[1].tok);
   const sc = list.reduce((s, [, a]) => s + a.cost, 0), st = list.reduce((s, [, a]) => s + a.tok, 0);
@@ -1924,7 +1925,7 @@ function rove(hostSel, itemSel) {
 const tip = $("#tip");
 let tipKey = null, lastMouse = null, tipFromFocus = false, tipSize = [0, 0];
 document.addEventListener("mousemove", (e) => { lastMouse = { clientX: e.clientX, clientY: e.clientY }; moveTip(e); });
-const hideMouseTip = (e) => { if (e && e.type === "scroll" && performance.now() < ignoreScrollUntil) return; if (!tipFromFocus || (e && e.type === "scroll")) { tip.style.display = "none"; tipKey = null; lastMouse = null; tipFromFocus = false; } };
+const hideMouseTip = (e) => { if (e && e.type === "scroll" && performance.now() < ignoreScrollUntil) return; if (!tipFromFocus || (e && e.type === "scroll")) { tip.style.display = "none"; tipKey = null; lastMouse = null; tipFromFocus = false; } document.querySelectorAll(".hero .mk").forEach((m) => m.remove()); };
 document.documentElement.addEventListener("mouseleave", hideMouseTip);
 document.addEventListener("scroll", hideMouseTip, true);
 document.addEventListener("focusin", (e) => {
@@ -2109,7 +2110,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "F11") { e.preventDefault(); return setFullscreen(!isFullscreen); }
   if (e.key === "Escape") {
-    if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; return; }
+    if (tip.style.display === "block" && tipFromFocus) { tip.style.display = "none"; tipKey = null; tipFromFocus = false; return; }
     if (drag) { const p = drag.pending; if (drag.band) drag.band.remove(); drag = null; swallowClick = true; if (p) render(); return; } // the mouse button is still down: eat the click that comes with its release
     if (document.querySelector(".card.max")) return expandCard(null);
     { const ae = document.activeElement, pre = ae && ae.closest && (ae.closest("#update pre") || (ae.matches('#update [data-upd="notes"][aria-expanded="true"]') && $("#update pre"))); if (pre) { pre.hidden = true; const nb = $('#update [data-upd="notes"]'); if (nb) { nb.setAttribute("aria-expanded", "false"); nb.focus(); } return; } }

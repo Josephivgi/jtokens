@@ -217,7 +217,9 @@ svg text.dn-v { fill: var(--text-primary); font-size: 15px; font-weight: 650; }
 .shcap { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shcap b { color: var(--text-primary); font-weight: 600; }
 .hbar .val .pc { color: var(--text-muted); font-size: 11px; margin-left: 8px; display: inline-block; min-width: 34px; }
-.mixrow { display: grid; grid-template-columns: minmax(0, 1fr) auto 52px 52px; gap: 8px; padding: 4px 2px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+.mixrow { display: grid; grid-template-columns: minmax(0, 1fr) auto 52px 52px; }
+.mixrow.c3 { grid-template-columns: minmax(0, 1fr) auto 52px; }
+.mixrow { gap: 8px; padding: 4px 2px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
 .mixrow span:first-child { display: inline-flex; gap: 6px; align-items: center; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
 .mixrow i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 .mixrow span + span { text-align: right; }
@@ -441,7 +443,8 @@ svg text.callout { fill: var(--text-primary); font-size: 13px; font-weight: 600;
         <div class="body" id="tools"></div>
       </div>
       <div class="card" id="c-mix">
-        <div class="hd"><h2>Token mix</h2><span class="sub">Where the tokens and the cost went</span></div>
+        <div class="hd"><h2>Token mix</h2><span class="sub" id="mixSub">Where the API cost went</span><span class="spacer"></span>
+          <div class="seg mini" id="mixMode" role="group" aria-label="Token mix measure"><button data-v="tokens" aria-pressed="false">Tokens</button><button data-v="cost" aria-pressed="true">API cost</button><button data-v="both" aria-pressed="false">Both</button></div></div>
         <div class="body" id="mix"></div>
       </div>
       <div class="card" id="c-hourly">
@@ -546,7 +549,7 @@ const midName = (n) => D.projShort && D.projShort.has(n) ? D.projShort.get(n) : 
 // the oldest kept log for the selected tool (both tools: the oldest of either)
 const FD = () => state.src === "all" ? D.firstDay : D.firstDayBySrc[+state.src];
 const FH = () => state.src === "all" ? D.firstHour : D.firstHourBySrc[+state.src];
-const state = { src: "all", range: 30, metric: "cost", day: null, model: null, proj: null, sess: null, sort: "cost", sortDir: -1, sessCap: 300, projCap: 200, dailyMode: "day", hourMode: "hours", modelMode: "list", projMode: "list" };
+const state = { src: "all", range: 30, metric: "cost", day: null, model: null, proj: null, sess: null, sort: "cost", sortDir: -1, sessCap: 300, projCap: 200, dailyMode: "day", hourMode: "hours", modelMode: "list", projMode: "list", mixMode: null };
 let D = null;            // data from the scanner
 let colorOf = [];
 let priceOf = [];        // model index -> its list price row, or null
@@ -781,7 +784,7 @@ function render() {
   if ($("#tab-overview").hidden) { renderedHour = Math.floor(Date.now() / 3600000); RS = rangeStart(); focusOverride = null; overviewDirty = true; if (pricesFor !== D) { try { renderPrices(); } catch (err) { pricesKey = null; $("#priceTable").innerHTML = `<div class="empty">Could not draw the price table. Press Refresh to try again.</div>`; } pricesFor = D; } return; } // drawn when Overview comes back
   overviewDirty = false;
   const fk = focusOverride || focusKey(document.activeElement); focusOverride = null;
-  if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; } // Sessions follow Measure
+  if (state.metric !== lastMetric) { if (state.sort === (lastMetric === "cost" ? "cost" : "tokens")) state.sort = state.metric === "cost" ? "cost" : "tokens"; lastMetric = state.metric; state.mixMode = null; } // Sessions and Token mix follow Measure
   RS = rangeStart(); THIS_YEAR = new Date().getFullYear(); renderedHour = Math.floor(Date.now() / 3600000);
   // a day picked before midnight can fall out of the range; drop or trim it
   if (state.day && RS) { if (state.day[1] < RS) state.day = null; else if (state.day[0] < RS) state.day = [RS, state.day[1]]; }
@@ -1545,6 +1548,9 @@ function renderTools() {
 }
 
 function renderMix() {
+  const mode = state.mixMode || state.metric; // follows Measure until the card's own switch is used
+  $("#mixMode").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === mode));
+  $("#mixSub").textContent = mode === "cost" ? "Where the API cost went" : mode === "tokens" ? "Where the tokens went" : "Where the tokens and the API cost went";
   const t = [0, 0, 0, 0];
   for (const r of D.rows) if (passes(r)) { t[0] += r[3]; t[1] += r[4]; t[2] += r[5]; t[3] += r[6]; }
   const sum = t.reduce((a, b) => a + b, 0);
@@ -1559,13 +1565,37 @@ function renderMix() {
     add.forEach((v, i) => { if (Number.isFinite(v)) c[i] += v / 1e6; });
   }
   const csum = c.reduce((a, b) => a + b, 0);
+  if (mode === "cost" && !csum) { $("#mix").innerHTML = `<div class="empty">No priced usage here. Switch to Tokens to see it.</div>`; return; }
   const pct = (v, s) => !s ? "–" : v && v / s < 0.0005 ? "<0.1%" : (v / s * 100).toFixed(1) + "%";
-  // two rings: tokens outside, cost inside
   const ring = (vals, s, r, w) => { if (!s) return ""; const C = 2 * Math.PI * r; let off = 0; return vals.map((v, i) => { if (!v) return ""; const len = v / s * C, seg = `<circle r="${r}" cx="60" cy="60" fill="none" stroke="var(${cols[i]})" stroke-width="${w}" stroke-dasharray="${Math.max(0, len - (len > 3 ? 1.5 : 0)).toFixed(2)} ${C.toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 60 60)"/>`; off += len; return seg; }).join(""); };
-  const donut = `<svg class="donut" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Token mix: ${names.map((n, i) => n + " " + pct(t[i], sum) + " of tokens" + (csum ? ", " + pct(c[i], csum) + " of cost" : "")).join("; ")}"><circle r="50" cx="60" cy="60" fill="none" stroke="var(--surface-2)" stroke-width="14"/>${ring(t, sum, 50, 14)}${csum ? `<circle r="33" cx="60" cy="60" fill="none" stroke="var(--surface-2)" stroke-width="10"/>${ring(c, csum, 33, 10)}` : ""}<text x="60" y="57" text-anchor="middle" class="dn-v">${fmtTok(sum)}</text><text x="60" y="71" text-anchor="middle">tokens</text></svg>`;
-  $("#mix").innerHTML = `<div class="mixwrap">${donut}<div class="mixtab"><div class="mixrow mixhd"><span>Kind</span><span>Tokens</span><span>Share</span><span title="Share of cost at each model's base list rate">Cost</span></div>
-    ${t.map((v, i) => `<div class="mixrow" title="${names[i]}: ${fmtInt(v)} tokens"><span><i style="background:var(${cols[i]})"></i><span class="nm">${["Input", "Output", "Cache read", "Cache write"][i]}</span></span><span>${fmtTok(v)}</span><span class="muted">${pct(v, sum)}</span><span>${pct(c[i], csum)}</span></div>`).join("")}</div></div>
-    <div class="note">Outer ring: share of tokens. Inner ring: share of cost at list rates. Output includes reasoning; input is the part not read from cache.</div>`;
+  const track = (r, w) => `<circle r="${r}" cx="60" cy="60" fill="none" stroke="var(--surface-2)" stroke-width="${w}"/>`;
+  const kinds = ["Input", "Output", "Cache read", "Cache write"];
+  const sw = (i) => `<span><i style="background:var(${cols[i]})"></i><span class="nm">${kinds[i]}</span></span>`;
+  let rings, center, label, head, rows, note;
+  if (mode === "tokens") {
+    rings = track(50, 16) + ring(t, sum, 50, 16);
+    center = `<text x="60" y="57" text-anchor="middle" class="dn-v">${fmtTok(sum)}</text><text x="60" y="71" text-anchor="middle">tokens</text>`;
+    label = names.map((n, i) => n + " " + pct(t[i], sum) + " of tokens").join("; ");
+    head = `<div class="mixrow mixhd c3"><span>Kind</span><span>Tokens</span><span>Share</span></div>`;
+    rows = t.map((v, i) => `<div class="mixrow c3" title="${names[i]}: ${fmtInt(v)} tokens">${sw(i)}<span>${fmtTok(v)}</span><span class="muted">${pct(v, sum)}</span></div>`).join("");
+    note = "Share of tokens by kind. Output includes reasoning; input is the part not read from cache.";
+  } else if (mode === "cost") {
+    rings = track(50, 16) + ring(c, csum, 50, 16);
+    center = `<text x="60" y="57" text-anchor="middle" class="dn-v">${fmtUsd(csum)}</text><text x="60" y="71" text-anchor="middle">API cost</text>`;
+    label = names.map((n, i) => n + " " + pct(c[i], csum) + " of API cost").join("; ");
+    head = `<div class="mixrow mixhd c3"><span>Kind</span><span title="At each model's base list rate">API cost</span><span>Share</span></div>`;
+    rows = c.map((v, i) => `<div class="mixrow c3" title="${names[i]}: ${colUsd(v)} at list rates, ${fmtInt(t[i])} tokens">${sw(i)}<span>${colUsd(v)}</span><span class="muted">${pct(v, csum)}</span></div>`).join("");
+    note = "Share of API cost by kind, at each model's base list rate. Output includes reasoning; input is the part not read from cache.";
+  } else {
+    rings = track(50, 14) + ring(t, sum, 50, 14) + (csum ? track(33, 10) + ring(c, csum, 33, 10) : "");
+    center = `<text x="60" y="55" text-anchor="middle" class="dn-v">${fmtTok(sum)}</text><text x="60" y="69" text-anchor="middle">${csum ? fmtUsd(csum) : "tokens"}</text>`;
+    label = names.map((n, i) => n + " " + pct(t[i], sum) + " of tokens" + (csum ? ", " + pct(c[i], csum) + " of API cost" : "")).join("; ");
+    head = `<div class="mixrow mixhd"><span>Kind</span><span>Tokens</span><span>Tokens %</span><span title="Share of API cost at each model's base list rate">Cost %</span></div>`;
+    rows = t.map((v, i) => `<div class="mixrow" title="${names[i]}: ${fmtInt(v)} tokens, ${colUsd(c[i])} at list rates">${sw(i)}<span>${fmtTok(v)}</span><span class="muted">${pct(v, sum)}</span><span>${pct(c[i], csum)}</span></div>`).join("");
+    note = "Outer ring: share of tokens. Inner ring: share of API cost at list rates. Output includes reasoning; input is the part not read from cache.";
+  }
+  const donut = `<svg class="donut" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Token mix: ${label}">${rings}${center}</svg>`;
+  $("#mix").innerHTML = `<div class="mixwrap">${donut}<div class="mixtab">${head}${rows}</div></div><div class="note">${note}</div>`;
 }
 
 // ---------- plan limits: request activity against each provider's reported windows
@@ -1997,6 +2027,7 @@ document.addEventListener("click", (e) => {
     if (g === "hourMode") { state.hourMode = seg.dataset.v; renderHourly(); return hideAxisText(); }
     if (g === "modelMode") { state.modelMode = seg.dataset.v; renderModels(); return hideAxisText(); }
     if (g === "projMode") { state.projMode = seg.dataset.v; return renderProjects(); }
+    if (g === "mixMode") { state.mixMode = seg.dataset.v; return renderMix(); }
     return render();
   }
   const tab = t.closest(".tabs button");

@@ -679,7 +679,7 @@ window.tkData = function (data) {
   showScanInfo();
   D.lastBySrc = D.harnesses.map((_, s) => D.rows.reduce((m, r) => D.models[r[0]].src === s ? Math.max(m, r[2]) : m, 0));
   scanDone();
-  try { render(); if (!$("#tab-alerts").hidden) renderReport(); } finally { $("#refresh").disabled = !!window.__TK_STATIC; }
+  try { render(); } finally { $("#refresh").disabled = !!window.__TK_STATIC; }
   if (!rendered) {
     rendered = true;
     if (window.ipc) window.ipc.postMessage("rendered:" + JSON.stringify(selfCheck()));
@@ -1306,7 +1306,7 @@ function renderShare() {
   const slot = plotW / (idx.length - 1);
   idx.forEach((i, j) => {
     const rows = order.filter((m) => per[i].get(m) > 0).map((m) => [m === -1 ? "Other models" : D.models[m].name, per[i].get(m) / tot[i]]);
-    s += `<rect class="hit" data-i="${j}" x="${Math.max(L, x(j) - slot / 2)}" y="${T}" width="${slot}" height="${plotH}" tabindex="-1" role="img" aria-label="${esc(lab(i))}: ${esc(rows.map(([n, p]) => n + " " + (p * 100).toFixed(1) + "%").join(", "))}"/>`;
+    s += `<rect class="hit" data-i="${j}" x="${Math.max(L, x(j) - slot / 2)}" y="${T}" width="${Math.min(L + plotW, x(j) + slot / 2) - Math.max(L, x(j) - slot / 2)}" height="${plotH}" tabindex="-1" role="img" aria-label="${esc(lab(i))}: ${esc(rows.map(([n, p]) => n + " " + (p * 100).toFixed(1) + "%").join(", "))}"/>`;
   });
   s += `</svg>`;
   el.innerHTML = s;
@@ -1407,7 +1407,7 @@ function renderModelTrend() {
   slots.forEach((k, i) => {
     if (i >= upto) return; // hours that have not happened yet
     const a11y = ` tabindex="-1" role="img" aria-label="${esc(full(i))}: ${esc(rowsAt(i).map(([nm, , v]) => nm + " " + tipVal(v)).join(", ") || none(i))}"`;
-    s += `<rect class="hit" data-i="${i}" x="${x(i) - slot / 2}" y="${T}" width="${slot}" height="${plotH}"${a11y}/>`;
+    s += `<rect class="hit" data-i="${i}" x="${Math.max(L, x(i) - slot / 2)}" y="${T}" width="${Math.min(L + plotW, x(i) + slot / 2) - Math.max(L, x(i) - slot / 2)}" height="${plotH}"${a11y}/>`;
   });
   if (state.model !== null && state.metric === "cost" && !D.models[state.model].priced) s += `<text x="${L + 8}" y="${T + 12}" class="callout">${esc(D.models[state.model].name.length > 22 ? D.models[state.model].name.slice(0, 21) + "…" : D.models[state.model].name)}: no public price</text>`;
   s += `</svg>`;
@@ -2354,7 +2354,7 @@ for (const id of ["alOn", "alWatch", "alCostH", "alTokH", "alCostD"]) $("#" + id
   if (!window.ipc) return;
   window.ipc.postMessage("alertcfg:" + JSON.stringify({
     on: $("#alOn").checked, watch: $("#alWatch").checked,
-    costH: +$("#alCostH").value || 0, tokH: Math.max(0, Math.round(+$("#alTokH").value) || 0), costD: +$("#alCostD").value || 0,
+    costH: Math.max(0, +$("#alCostH").value || 0), tokH: Math.max(0, Math.round(+$("#alTokH").value) || 0), costD: Math.max(0, +$("#alCostD").value || 0),
   }));
 });
 $("#alTest").addEventListener("click", () => window.ipc && window.ipc.postMessage("alerttest"));

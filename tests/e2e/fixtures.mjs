@@ -70,8 +70,8 @@ const EVENTS = [
   { h: 'devin', w: 'd45', model: 'swe-2-high', input: 40, output: 4, cacheRead: 0, cacheWrite: 0 },
 ];
 
-const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Droid', 'Qwen Code', 'Devin'];
-const SRC = { claude: 0, codex: 1, opencode: 2, pi: 3, droid: 4, qwen: 5, devin: 6 };
+const HARNESSES = ['Claude Code', 'Codex', 'OpenCode', 'Pi', 'Droid', 'Qwen Code', 'Devin', 'Cursor'];
+const SRC = { claude: 0, codex: 1, opencode: 2, pi: 3, droid: 4, qwen: 5, devin: 6, cursor: 7 };
 
 function jsonl(lines) {
   return lines.map((o) => JSON.stringify(o)).join('\n') + '\n';

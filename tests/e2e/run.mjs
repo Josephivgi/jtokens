@@ -98,7 +98,7 @@ async function main() {
 
   // 3. the scanner's JSON, per harness, for every event on disk
   const data = await evaluate(`({ harnesses: D.harnesses, models: D.models.map((m) => ({ src: m.src, id: m.id })), rows: D.rows, sessions: D.sessions.map((s) => s[0]) })`);
-  check('scanner reports the five harnesses in order', JSON.stringify(data.harnesses) === JSON.stringify(fx.harnesses), JSON.stringify(data.harnesses));
+  check('scanner reports every harness in order', JSON.stringify(data.harnesses) === JSON.stringify(fx.harnesses), JSON.stringify(data.harnesses));
   const tot = fx.harnesses.map((_, h) => ({ tokens: 0, requests: 0, cost: 0 }));
   for (const r of data.rows) { const t = tot[data.models[r[0]].src]; t.tokens += r[3] + r[4] + r[5] + r[6]; t.requests += r[8]; t.cost += r[7]; }
   fx.harnesses.forEach((name, h) => {
